@@ -1,0 +1,20 @@
+O:23:"PHPStan\Cache\CacheItem":2:{s:11:"variableKey";s:83:"v3-6.73.0.6-8.3.35-2e3163719575ef1751773101f2b7c6851d284a8082c5c76a8704c5d872e9470e";s:4:"data";a:22:{s:13:"locatedSource";a:2:{s:5:"class";s:60:"PHPStan\BetterReflection\SourceLocator\Located\LocatedSource";s:4:"data";a:2:{s:4:"name";s:37:"App\Modules\Shared\Models\TenantModel";s:8:"filename";s:72:"C:/xampp/htdocs/industrial_crm/app/Modules/Shared/Models/TenantModel.php";}}s:9:"namespace";s:25:"App\Modules\Shared\Models";s:4:"name";s:37:"App\Modules\Shared\Models\TenantModel";s:9:"shortName";s:11:"TenantModel";s:11:"isInterface";b:0;s:7:"isTrait";b:0;s:6:"isEnum";b:0;s:12:"isBackedEnum";b:0;s:9:"modifiers";i:64;s:10:"docComment";s:580:"/**
+ * Base class for company-owned masters and transactions: tenant-scoped, audited,
+ * soft-deleted, commentable, with created_by/updated_by maintained.
+ *
+ * Add `Approvable` for approval-workflow documents and `BelongsToLocation` for branch-owned ones.
+ *
+ * @property int $id
+ * @property int $company_id
+ * @property string $code
+ * @property string $status
+ * @property string|null $remarks
+ * @property int|null $created_by
+ * @property int|null $updated_by
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
+ */";s:10:"attributes";a:0:{}s:9:"startLine";i:31;s:7:"endLine";i:42;s:11:"startColumn";i:1;s:9:"endColumn";i:1;s:15:"parentClassName";s:34:"Illuminate\Database\Eloquent\Model";s:20:"implementsClassNames";a:1:{i:0;s:46:"App\Modules\Shared\Contracts\CommentableRecord";}s:15:"traitClassNames";a:5:{i:0;s:44:"App\Modules\Shared\Models\Concerns\Auditable";i:1;s:51:"App\Modules\Shared\Models\Concerns\BelongsToCompany";i:2;s:50:"App\Modules\Shared\Models\Concerns\HasAuditColumns";i:3;s:46:"App\Modules\Shared\Models\Concerns\HasComments";i:4;s:40:"Illuminate\Database\Eloquent\SoftDeletes";}s:18:"immediateConstants";a:0:{}s:19:"immediateProperties";a:1:{s:10:"attributes";a:16:{s:18:"declaringClassName";s:37:"App\Modules\Shared\Models\TenantModel";s:21:"implementingClassName";s:37:"App\Modules\Shared\Models\TenantModel";s:4:"name";s:10:"attributes";s:9:"modifiers";i:2;s:4:"type";N;s:7:"default";a:2:{s:4:"code";s:22:"['status' => 'active']";s:10:"attributes";a:6:{s:9:"startLine";i:39;s:7:"endLine";i:41;s:13:"startTokenPos";i:90;s:12:"startFilePos";i:1384;s:11:"endTokenPos";i:99;s:10:"endFilePos";i:1420;}}s:10:"docComment";s:175:"/**
+ * Mirror the column defaults in memory, so a freshly created instance already knows its status
+ * and the audit log records real before/after values instead of nulls.
+ */";s:10:"attributes";a:0:{}s:9:"startLine";i:39;s:7:"endLine";i:41;s:11:"startColumn";i:5;s:9:"endColumn";i:6;s:10:"isPromoted";b:0;s:21:"declaredAtCompileTime";b:1;s:16:"immediateVirtual";b:0;s:14:"immediateHooks";a:0:{}}}s:16:"immediateMethods";a:0:{}s:10:"traitsData";a:4:{s:7:"aliases";a:0:{}s:9:"modifiers";a:0:{}s:11:"precedences";a:0:{}s:6:"hashes";a:0:{}}}}

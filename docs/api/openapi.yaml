@@ -1,0 +1,1140 @@
+openapi: 3.0.3
+info:
+  title: FormEzy ERP — mobile / integrations API
+  version: "1.0"
+  description: |
+    The REST API the field app (PWA or native) uses: sign in with a device token, see today's route plan, mark attendance,
+    enter and work leads and follow-ups, keep a copy of the reference data.
+
+    **Everything here is decided on the server.** The app sends a position and what the person typed; the server decides the
+    company, the branch, the day, who may see what, whether the position is inside the geofence, and what a lead's number is.
+    Guide: `docs/api.md`. This file is held equal to the real routes by `tests/Feature/Api/ApiSpecTest.php`.
+
+    **Envelope.** Success: `{"data": …, "meta": {"request_id": "…"}}` (lists add `meta.pagination` and `meta.server_time`).
+    Failure: `{"error": {"code": "…", "message": "…", "fields": {…}, "details": {…}}, "meta": {"request_id": "…"}}`.
+    The same `request_id` is in the `X-Request-Id` response header and the server log.
+
+    **Times** are ISO 8601 with an offset (`2026-10-20T11:00:00+05:30`). A time sent without an offset is company wall-clock time.
+    **Money** is a decimal string (`"250000.00"`), never a number.
+servers:
+  - url: /api/v1
+security:
+  - deviceToken: []
+tags:
+  - name: Platform
+  - name: Auth and devices
+  - name: Field day
+  - name: Leads
+  - name: Deals
+  - name: Quotations
+  - name: Follow-ups
+  - name: Lookups
+
+paths:
+  /health:
+    get:
+      operationId: api.v1.health
+      tags: [Platform]
+      summary: Is the API up and can it reach its database?
+      description: "Open to anyone; reveals nothing about the installation. 503 with `status: degraded` when the database cannot be reached."
+      security: []
+      responses:
+        "200": { description: "Up", content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { description: "Degraded" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/login:
+    post:
+      operationId: api.v1.auth.login
+      tags: [Auth and devices]
+      summary: Sign a device in
+      description: |
+        Needs a valid e-mail and password of an active account that holds the `api.access` permission. Throttled: 5 attempts a
+        minute per e-mail address and IP address, 20 a minute per IP address. A device that signs in again with the same
+        `device_id` replaces its old token; beyond 5 devices the least recently used is signed out. The token is shown once.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "201": { description: "Signed in", content: { application/json: { schema: { $ref: "#/components/schemas/TokenResponse" } } } }
+        "401": { description: "`invalid_credentials` — the same answer for an unknown address, a wrong password and a deactivated account" }
+        "403": { description: "`api_access_denied` (after the right password) or `no_company`" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/logout:
+    post:
+      operationId: api.v1.auth.logout
+      tags: [Auth and devices]
+      summary: Sign this device out
+      description: Deletes this device's token. Allowed for a read-only token.
+      responses:
+        "200": { description: "Signed out" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/refresh:
+    post:
+      operationId: api.v1.auth.refresh
+      tags: [Auth and devices]
+      summary: Swap this device's token for a fresh one
+      description: Same device, same scopes, a new expiry. The old token stops working at once; a reply lost in transit means signing in again. Allowed for a read-only token.
+      responses:
+        "201": { description: "New token", content: { application/json: { schema: { $ref: "#/components/schemas/TokenResponse" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /me:
+    get:
+      operationId: api.v1.me
+      tags: [Auth and devices]
+      summary: Who am I, which company am I working in, what may I do
+      description: The `can` map is for showing and hiding buttons; the server decides again on every call.
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The profile" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /devices:
+    get:
+      operationId: api.v1.devices.index
+      tags: [Auth and devices]
+      summary: My signed-in devices
+      responses:
+        "200": { description: "The person's own devices, the current one marked; never a token" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /devices/{device}:
+    delete:
+      operationId: api.v1.devices.destroy
+      tags: [Auth and devices]
+      summary: Sign one of my devices out
+      parameters:
+        - { name: device, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: "Signed out" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /route-plan/today:
+    get:
+      operationId: api.v1.route-plan.today
+      tags: [Field day]
+      summary: Today's route plan
+      description: "The signed-in person's own plan for today, with the radius that will be applied to each stop. `data` is `null` with `meta.reason = no_route_plan` when there is none. Needs `route_plan.view`."
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The plan, or null", content: { application/json: { schema: { $ref: "#/components/schemas/RoutePlan" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /attendance:
+    get:
+      operationId: api.v1.attendance.index
+      tags: [Field day]
+      summary: My attendance, newest day first
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200": { description: "A page of the person's own records" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: api.v1.attendance.store
+      tags: [Field day]
+      summary: Mark today's attendance from where the device is
+      description: |
+        Needs `attendance.create` and an `Idempotency-Key`. The server finds today's published plan and decides: **no plan, a draft or
+        a cancelled one → 422** (`no_route_plan`, `plan_not_published`, `plan_cancelled`); a reading that is not a position →
+        422 `invalid_gps`; one less accurate than the company's limit (default 150 m) → 422 `low_accuracy`; one outside every stop's
+        geofence (default 500 m) → 422 `outside_geofence`. Every refusal is written to the violation log and reported with
+        `details.violation_id`. Already marked today → 409 `already_marked` (not a violation).
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/CompanyId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [position]
+              properties:
+                position: { $ref: "#/components/schemas/Position" }
+      responses:
+        "201": { description: "Marked", content: { application/json: { schema: { $ref: "#/components/schemas/Attendance" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /leads:
+    get:
+      operationId: api.v1.leads.index
+      tags: [Leads]
+      summary: Leads I may see, with filters
+      description: |
+        Own leads; a manager's team's and the pool; everyone's with `sales.scope_all`; plus leads the person holds a planned
+        follow-up on. Filters only narrow that. Default `stage=open`; with `updated_since` the default is `all`, the order is change
+        order (oldest first), and leads removed since come back with `deleted_at` set. Next time send `meta.server_time`.
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/UpdatedSince" }
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: q, in: query, description: "Name, number, contact, city, e-mail or part of a mobile number", schema: { type: string, maxLength: 100 } }
+        - { name: stage, in: query, schema: { type: string, enum: [open, all, new, contacted, qualified, deal, quotation, won, lost] } }
+        - { name: owner, in: query, description: "`me`, `none` (the pool) or a user id", schema: { type: string } }
+        - { name: branch, in: query, schema: { type: integer } }
+        - { name: source, in: query, schema: { type: integer } }
+        - { name: type, in: query, description: "`new` (prospects) or `existing` (inquiries from a customer)", schema: { type: string, enum: [new, existing] } }
+        - { name: due, in: query, schema: { type: string, enum: [overdue, today, week, none] } }
+        - { name: from, in: query, description: "Lead date from", schema: { type: string, format: date } }
+        - { name: to, in: query, description: "Lead date to", schema: { type: string, format: date } }
+      responses:
+        "200": { description: "A page of leads", content: { application/json: { schema: { $ref: "#/components/schemas/LeadList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+    post:
+      operationId: api.v1.leads.store
+      tags: [Leads]
+      summary: Enter a lead
+      description: |
+        Needs `lead.create` and an `Idempotency-Key`.
+
+        **From the field** — whoever holds `attendance.create` — `position` is required and checked against today's published route
+        plan before anything is saved: outside the geofence → **422** (`outside_geofence`) and the attempt is logged as a `lead_save`
+        violation; no usable plan → 422 `no_route_plan` / `plan_not_published` / `plan_cancelled`. The lead's branch is the plan's
+        (`location_id` is ignored), its channel is `field`, its source defaults to "Field", and the accepted position is stored on it.
+
+        **Everyone else** enters a typed-in lead: `location_id` (a branch they work in) and `lead_source_id` are required.
+
+        **An inquiry from an existing customer** sends `customer_ledger_id` (find the customer with `/lookups/customers`; it needs
+        `lead.create` and `ledger.view`). The name, contact and address are then taken from the customer's ledger — whatever is sent for
+        them is ignored — no mobile number is needed and a repeat inquiry is not a duplicate. Every interest must be an approved item
+        with a quantity, and may carry the `expected_rate`; the lead's `expected_value` is the sum of the lines, worked out by the server.
+
+        A mobile number that an open lead already has is refused with a warning on `mobile` until `acknowledge_duplicate` is true.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/CompanyId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadInput" }
+      responses:
+        "201": { description: "Saved", headers: { Location: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/Lead" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /leads/transfer:
+    post:
+      operationId: api.v1.leads.transfer
+      tags: [Leads]
+      summary: Hand one or many leads to another person
+      description: All or nothing. Needs `lead.assign`; to yourself or someone you manage; into a branch they work in. Reason required; history kept.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKeyOptional" }, { $ref: "#/components/parameters/CompanyId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lead_ids, to_user_id, reason]
+              properties:
+                lead_ids: { type: array, minItems: 1, maxItems: 200, items: { type: integer } }
+                to_user_id: { type: integer }
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+      responses:
+        "200": { description: "The leads, with their new owner" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /leads/{lead}:
+    parameters:
+      - { name: lead, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: api.v1.leads.show
+      tags: [Leads]
+      summary: One lead, with interests, recent follow-ups and what the caller may do with it
+      description: A lead the person may not see is 404 — whether it exists is not revealed.
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The lead", content: { application/json: { schema: { $ref: "#/components/schemas/Lead" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: api.v1.leads.update
+      tags: [Leads]
+      summary: Change some fields of a lead
+      description: |
+        Only the fields sent change. Sending `interests` replaces the list (a row with an `id` is updated, one without is added, one
+        left out is removed). A changed `pin_code` re-fills state, district and block. `expected_updated_at` (the `updated_at` you
+        loaded) makes a stale edit a 409 `version_conflict` carrying the current lead in `details.current`. Owner and branch cannot
+        be changed here. A lost or converted lead is 409 `state_conflict`.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKeyOptional" }, { $ref: "#/components/parameters/CompanyId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeadInput" }
+      responses:
+        "200": { description: "The lead as it is now" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+    delete:
+      operationId: api.v1.leads.destroy
+      tags: [Leads]
+      summary: Remove a lead entered by mistake
+      description: "Needs `lead.delete` and the lead to be in the caller's line. A soft delete: the lead and its number stay on record. A converted lead cannot be removed."
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKeyOptional" }, { $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "Removed" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /leads/{lead}/stage:
+    post:
+      operationId: api.v1.leads.stage
+      tags: [Leads]
+      summary: Move a lead to another stage
+      description: New, contacted and qualified are chosen by a person; **lost needs `lost_reason_id`**; re-opening a lost lead needs `comment`. Deal, quotation and won are set by the system — asking for them is 409.
+      parameters:
+        - { name: lead, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage]
+              properties:
+                stage: { type: string, enum: [new, contacted, qualified, deal, quotation, won, lost] }
+                comment: { type: string, maxLength: 1000 }
+                lost_reason_id: { type: integer }
+      responses:
+        "200": { description: "The lead as it is now" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /leads/{lead}/followups:
+    post:
+      operationId: api.v1.leads.followups.plan
+      tags: [Follow-ups]
+      summary: Plan a follow-up on a lead
+      description: In the future (within two years), for the lead's owner by default, otherwise yourself or someone you manage who works in the lead's branch. Needs an `Idempotency-Key`.
+      parameters:
+        - { name: lead, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scheduled_at, type]
+              properties:
+                scheduled_at: { type: string, format: date-time }
+                type: { $ref: "#/components/schemas/FollowupType" }
+                assigned_to: { type: integer }
+                notes: { type: string, maxLength: 2000 }
+      responses:
+        "201": { description: "Planned", content: { application/json: { schema: { $ref: "#/components/schemas/Followup" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /leads/{lead}/followups/log:
+    post:
+      operationId: api.v1.leads.followups.log
+      tags: [Follow-ups]
+      summary: Record something that was just done, without having planned it
+      description: Needs an outcome; an outcome that "needs a next follow-up" (Call Back Later, Meeting Fixed) is refused without `next_at`. A first real contact moves a new lead to contacted. Needs an `Idempotency-Key`.
+      parameters:
+        - { name: lead, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, outcome_id]
+              properties:
+                type: { $ref: "#/components/schemas/FollowupType" }
+                outcome_id: { type: integer }
+                notes: { type: string, maxLength: 2000 }
+                next_at: { type: string, format: date-time }
+                next_type: { $ref: "#/components/schemas/FollowupType" }
+      responses:
+        "201": { description: "Recorded", content: { application/json: { schema: { $ref: "#/components/schemas/Followup" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /leads/{lead}/convert:
+    post:
+      operationId: api.v1.leads.convert
+      tags: [Deals]
+      summary: Turn a qualified lead into a deal
+      description: |
+        Needs `deal.create` and an `Idempotency-Key`. The lead must be **qualified**, have an owner, and be one the caller works (their
+        own, their team's, or everyone's with `sales.scope_all`) in a branch they work in; a lead converts **once** — a second attempt, or
+        a second device racing the first, is 409 `state_conflict` naming the deal. **Every line the lead listed must come across**
+        (send its `lead_interest_id`; it may be adjusted, but its item cannot be swapped and it cannot be dropped — edit the lead first),
+        and each line needs an approved item, a quantity the unit allows and the `expected_rate`; more lines may be added. A line the
+        lead only described in words needs its item chosen. The deal number, the amounts, the value, the branch and the owner are the
+        server's: whatever is sent for them is ignored. For an inquiry the deal is for the inquiry's customer; for a new lead
+        `customer_ledger_id` may link an approved, active customer.
+      parameters:
+        - { name: lead, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DealInput" }
+      responses:
+        "201": { description: "The deal", headers: { Location: { schema: { type: string } } }, content: { application/json: { schema: { $ref: "#/components/schemas/Deal" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /deals:
+    get:
+      operationId: api.v1.deals.index
+      tags: [Deals]
+      summary: Deals I may see, with filters
+      description: |
+        Own deals; a manager's team's; everyone's with `sales.scope_all`; plus the deals an approver is asked to decide (or has
+        decided). Filters only narrow that. Default `stage=open`; with `updated_since` the default is `all` and the order is change order
+        (oldest first). A deal is never deleted, so a sync has nothing to drop. Needs `deal.view`.
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/UpdatedSince" }
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: q, in: query, description: "Party name, deal number, contact or part of a mobile number", schema: { type: string, maxLength: 100 } }
+        - { name: stage, in: query, schema: { type: string, enum: [open, all, discovery, negotiation, quotation, won, lost] } }
+        - { name: owner, in: query, description: "`me` or a user id", schema: { type: string } }
+        - { name: branch, in: query, schema: { type: integer } }
+        - { name: approval, in: query, schema: { type: string, enum: [draft, pending, approved, rejected] } }
+        - { name: closing, in: query, description: "`late` (date passed, still open) or `month` (this calendar month)", schema: { type: string, enum: [late, month] } }
+      responses:
+        "200": { description: "A page of deals", content: { application/json: { schema: { $ref: "#/components/schemas/DealList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /deals/{deal}:
+    parameters:
+      - { name: deal, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: api.v1.deals.show
+      tags: [Deals]
+      summary: One deal, with its lines, its stage history and what the caller may do with it
+      description: A deal the person may not see is 404 — whether it exists is not revealed.
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The deal", content: { application/json: { schema: { $ref: "#/components/schemas/Deal" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: api.v1.deals.update
+      tags: [Deals]
+      summary: Change a deal
+      description: |
+        Only the fields sent change. **Where it stands** — `expected_close_date`, `probability` (1–99), `remarks` — can be changed while
+        the deal is open, even once it is approved. **What it is** — `customer_ledger_id` and `items` (which replaces the lines: a row with
+        an `id` is updated, one without is added, one left out is removed) — only while it is a draft or was returned; in approval, approved,
+        quoted or closed it is 409 `state_conflict` with the reason. `expected_updated_at` (the `updated_at` you loaded) makes a stale edit a
+        409 `version_conflict` carrying the current deal in `details.current`.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKeyOptional" }, { $ref: "#/components/parameters/CompanyId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DealInput" }
+      responses:
+        "200": { description: "The deal as it is now", content: { application/json: { schema: { $ref: "#/components/schemas/Deal" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /deals/{deal}/stage:
+    post:
+      operationId: api.v1.deals.stage
+      tags: [Deals]
+      summary: Move a deal to another stage
+      description: Between discovery and negotiation, to **lost** (needs `lost_reason_id`), or back from lost (needs `deal.reopen` and a `comment`; the lead comes back with it). Quotation and won are set by the documents that follow — asking for them is 409. Marking a deal lost marks its lead lost too.
+      parameters:
+        - { name: deal, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage]
+              properties:
+                stage: { type: string, enum: [discovery, negotiation, quotation, won, lost] }
+                comment: { type: string, maxLength: 1000 }
+                lost_reason_id: { type: integer }
+      responses:
+        "200": { description: "The deal as it is now", content: { application/json: { schema: { $ref: "#/components/schemas/Deal" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /deals/{deal}/submit:
+    post:
+      operationId: api.v1.deals.submit
+      tags: [Deals]
+      summary: Send a draft or returned deal for approval
+      description: The deal needs at least one line and must still be open. It is locked while it waits. The approver decides in the approval inbox on the web; the person who sent it is told how it was decided.
+      parameters:
+        - { name: deal, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      responses:
+        "200": { description: "The deal, now pending", content: { application/json: { schema: { $ref: "#/components/schemas/Deal" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /deals/{deal}/reassign:
+    post:
+      operationId: api.v1.deals.reassign
+      tags: [Deals]
+      summary: Hand a deal, and its lead, to another person
+      description: "Needs `deal.assign` and the caller to manage the deal's owner. The same checks as handing a lead over (an active user who works in the branch, the caller or someone they manage); a reason is required; the deal's lead changes hands with it and the history of both is kept. If the caller can no longer open the deal the answer is `{id, handed_over: true}`."
+      parameters:
+        - { name: deal, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_user_id, reason]
+              properties:
+                to_user_id: { type: integer }
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+      responses:
+        "200": { description: "The deal as it is now" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /quotations:
+    get:
+      operationId: api.v1.quotations.index
+      tags: [Quotations]
+      summary: Quotations I may see, with filters (read only)
+      description: |
+        Revisions of quotations made from the caller's own leads and deals, a manager's team's, everyone's with `sales.scope_all`, plus the
+        ones an approver is asked to decide (or has decided). Default `state=live` (draft, sent or accepted); with `updated_since` the default
+        is `all` and the order is change order (oldest first). A quotation is never deleted, so a sync has nothing to drop. Needs
+        `quotation.view`. Quotations are made, approved, sent and revised on the screens, not over the API.
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/UpdatedSince" }
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: q, in: query, description: "Customer name, quotation number or contact", schema: { type: string, maxLength: 100 } }
+        - { name: state, in: query, schema: { type: string, enum: [live, all, draft, sent, accepted, declined, expired, superseded, cancelled] } }
+        - { name: deal_id, in: query, schema: { type: integer } }
+        - { name: lead_id, in: query, schema: { type: integer } }
+        - { name: branch, in: query, schema: { type: integer } }
+        - { name: approval, in: query, schema: { type: string, enum: [draft, pending, approved, rejected] } }
+        - { name: latest, in: query, description: "Only the latest revision of each quotation", schema: { type: boolean } }
+      responses:
+        "200": { description: "A page of quotations", content: { application/json: { schema: { $ref: "#/components/schemas/QuotationList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /quotations/{quotation}:
+    parameters:
+      - { name: quotation, in: path, required: true, schema: { type: integer } }
+    get:
+      operationId: api.v1.quotations.show
+      tags: [Quotations]
+      summary: One revision of a quotation, with its lines, tax and status history
+      description: A quotation the person may not see is 404 — whether it exists is not revealed.
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The quotation", content: { application/json: { schema: { $ref: "#/components/schemas/Quotation" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /followups:
+    get:
+      operationId: api.v1.followups.index
+      tags: [Follow-ups]
+      summary: Follow-ups I may see
+      description: Mine, my teams', or everyone's (`sales.scope_all`); filters only narrow that. With `updated_since`, change order and called-off follow-ups included.
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/UpdatedSince" }
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: status, in: query, schema: { type: string, enum: [all, pending, done, cancelled, overdue, today] } }
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/FollowupType" } }
+        - { name: lead_id, in: query, schema: { type: integer } }
+        - { name: person, in: query, schema: { type: integer } }
+        - { name: team, in: query, schema: { type: integer } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200": { description: "A page of follow-ups" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /followups/calendar:
+    get:
+      operationId: api.v1.followups.calendar
+      tags: [Follow-ups]
+      summary: What the calendar shows between two moments
+      description: At most 62 days and 1,000 entries; called-off follow-ups are left out. `meta.window` says what was actually used.
+      parameters:
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: person, in: query, schema: { type: integer } }
+        - { name: team, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: "The follow-ups in the window" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /followups/{followup}/complete:
+    post:
+      operationId: api.v1.followups.complete
+      tags: [Follow-ups]
+      summary: Record what came of a planned follow-up
+      parameters:
+        - { name: followup, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome_id]
+              properties:
+                outcome_id: { type: integer }
+                notes: { type: string, maxLength: 2000 }
+                next_at: { type: string, format: date-time }
+                next_type: { $ref: "#/components/schemas/FollowupType" }
+      responses:
+        "200": { description: "Done", content: { application/json: { schema: { $ref: "#/components/schemas/Followup" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /followups/{followup}/reschedule:
+    post:
+      operationId: api.v1.followups.reschedule
+      tags: [Follow-ups]
+      summary: Move a planned follow-up to another time
+      parameters:
+        - { name: followup, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scheduled_at]
+              properties:
+                scheduled_at: { type: string, format: date-time }
+      responses:
+        "200": { description: "Moved", content: { application/json: { schema: { $ref: "#/components/schemas/Followup" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /followups/{followup}/cancel:
+    post:
+      operationId: api.v1.followups.cancel
+      tags: [Follow-ups]
+      summary: Call a planned follow-up off
+      parameters:
+        - { name: followup, in: path, required: true, schema: { type: integer } }
+        - { $ref: "#/components/parameters/IdempotencyKeyOptional" }
+        - { $ref: "#/components/parameters/CompanyId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200": { description: "Called off", content: { application/json: { schema: { $ref: "#/components/schemas/Followup" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /lookups/items:
+    get:
+      operationId: api.v1.lookups.items
+      tags: [Lookups]
+      summary: Items a lead may be interested in — approved and active only
+      description: Never an unapproved, returned, re-opened or switched-off item. With `updated_since`, `meta.removed_ids` lists (by id only) the items that changed and may no longer be used, so a copy can drop them. Needs `item.view`.
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/UpdatedSince" }
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        "200": { description: "A page of items with their units" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/customers:
+    get:
+      operationId: api.v1.lookups.customers
+      tags: [Lookups]
+      summary: Find an approved, active customer to name on an inquiry
+      description: A search only — a few letters of the account code, the name or the GSTIN — returning at most `limit` customers with what picking one needs (never credit terms or bank details). Needs `ledger.view`.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50 } }
+        - { $ref: "#/components/parameters/CompanyId" }
+      responses:
+        "200": { description: "The customers" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /lookups/units:
+    get:
+      operationId: api.v1.lookups.units
+      tags: [Lookups]
+      summary: Units of measure
+      parameters: &lookupParams
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { $ref: "#/components/parameters/UpdatedSince" }
+        - { $ref: "#/components/parameters/CompanyId" }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        "200": { description: "A page; with `updated_since` switched-off rows come back with `active=false`" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/lead-sources:
+    get:
+      operationId: api.v1.lookups.lead-sources
+      tags: [Lookups]
+      summary: Where a lead can have come from
+      parameters: *lookupParams
+      responses:
+        "200": { description: "A page" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/followup-outcomes:
+    get:
+      operationId: api.v1.lookups.followup-outcomes
+      tags: [Lookups]
+      summary: What can come of a follow-up
+      description: "`counts_as_contact` — the person was reached; `needs_next_followup` — a date for the next step is required."
+      parameters: *lookupParams
+      responses:
+        "200": { description: "A page" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/lost-reasons:
+    get:
+      operationId: api.v1.lookups.lost-reasons
+      tags: [Lookups]
+      summary: Why a lead can be marked lost
+      parameters: *lookupParams
+      responses:
+        "200": { description: "A page" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/branches:
+    get:
+      operationId: api.v1.lookups.branches
+      tags: [Lookups]
+      summary: The branches I work in, in the company this request works in
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The branches" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/staff:
+    get:
+      operationId: api.v1.lookups.staff
+      tags: [Lookups]
+      summary: The people I may hand a lead to — myself and the people I manage (everyone, with `sales.scope_all`)
+      parameters: [{ $ref: "#/components/parameters/CompanyId" }]
+      responses:
+        "200": { description: "The people" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /lookups/pin-codes/{pin}:
+    get:
+      operationId: api.v1.lookups.pin-codes
+      tags: [Lookups]
+      summary: What the geography master knows about a PIN code
+      description: State, district and block where the PIN maps to exactly one; `ambiguous` when it does not; `localities` for a "pick one" prompt; `found=false` when unknown. Needs `lead.create`.
+      parameters:
+        - { name: pin, in: path, required: true, schema: { type: string, pattern: "^[1-9][0-9]{5}$" } }
+        - { $ref: "#/components/parameters/CompanyId" }
+      responses:
+        "200": { description: "The lookup" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Validation" }
+
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: "A Sanctum device token from /auth/login (`12|abc…`). Revocable, expiring (14 days by default), listed under /devices. Scopes: `read` (GET) and `write` (everything that changes data)."
+
+  parameters:
+    CompanyId:
+      name: X-Company-Id
+      in: header
+      required: false
+      description: The company this request works in. Defaults to the person's own. A company they do not belong to is refused (403 `company_not_accessible`), never swapped for another.
+      schema: { type: integer }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: "A fresh UUID per action (8–80 characters: letters, digits, `- _ : .`). A repeat of the same request gets the first answer back with `Idempotent-Replayed: true`; the same key for a different request is 422 `idempotency_key_reused`; the same request still running is 409 `request_in_progress` (wait and resend). Only a successful answer is kept, for 48 hours."
+      schema: { type: string, minLength: 8, maxLength: 80 }
+    IdempotencyKeyOptional:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: As for creates, but not required.
+      schema: { type: string, minLength: 8, maxLength: 80 }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100000 }
+    PerPage:
+      name: per_page
+      in: query
+      description: Default 20, at most 100.
+      schema: { type: integer, minimum: 1, maximum: 100 }
+    UpdatedSince:
+      name: updated_since
+      in: query
+      description: Only what changed at or after this moment, in change order. Send the previous response's `meta.server_time`.
+      schema: { type: string, format: date-time }
+
+  responses:
+    BadRequest:
+      description: "`bad_request` (a body that is not JSON), `idempotency_key_required`, `idempotency_key_invalid`"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthenticated:
+      description: "`unauthenticated` (no token, or expired or revoked) or `account_inactive`; carries `WWW-Authenticate: Bearer`"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: "`forbidden` (a permission is missing), `api_access_denied`, `scope_missing` (a read-only device), `company_not_accessible`, `no_company`"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: "`not_found` — also for a record the person may not see, in this company or another"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Conflict:
+      description: "`state_conflict` (a rule says no because of the state things are in), `already_marked`, `version_conflict`, `request_in_progress`"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Validation:
+      description: "`validation_failed` with `error.fields`; for a position the code is the reason: `no_route_plan`, `plan_not_published`, `plan_cancelled`, `invalid_gps`, `low_accuracy`, `outside_geofence` (with `details.violation_id`); `idempotency_key_reused`"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    TooManyRequests:
+      description: "`too_many_requests`; `Retry-After` says when to try again"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, meta]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: outside_geofence }
+            message: { type: string, example: "You are 833 m from the nearest stop on today’s plan (Naroda GIDC); you need to be within 500 m." }
+            fields:
+              type: object
+              additionalProperties: { type: array, items: { type: string } }
+            details:
+              type: object
+              example: { reason_label: Outside the geofence, violation_id: 41, attempt: lead_save }
+        meta: { $ref: "#/components/schemas/Meta" }
+    Meta:
+      type: object
+      properties:
+        request_id: { type: string, example: 01K7Q3Z8Y2M6W4N5R9T0V1X2A3 }
+        server_time: { type: string, format: date-time }
+        pagination:
+          type: object
+          properties:
+            page: { type: integer }
+            per_page: { type: integer }
+            total: { type: integer }
+            last_page: { type: integer }
+            has_more: { type: boolean }
+    Health:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            status: { type: string, enum: [ok, degraded] }
+            api: { type: string, example: v1 }
+            time: { type: string, format: date-time }
+            checks: { type: object, properties: { database: { type: string } } }
+    LoginRequest:
+      type: object
+      required: [email, password, device_name]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        device_name: { type: string, minLength: 2, maxLength: 100, example: "Ravi’s Pixel" }
+        device_id: { type: string, pattern: "^[A-Za-z0-9._:-]{8,64}$", description: A stable id the app keeps; signing in again with it replaces the old token }
+        app_version: { type: string, maxLength: 40 }
+        scopes: { type: array, items: { type: string, enum: [read, write] }, description: Default both }
+    TokenResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            token: { type: string, description: "Shown once" }
+            token_type: { type: string, example: Bearer }
+            expires_at: { type: string, format: date-time }
+            scopes: { type: array, items: { type: string } }
+            device: { type: object }
+            user: { type: object }
+    Position:
+      type: object
+      required: [latitude, longitude, accuracy_m]
+      description: "What the device claims. Whether it is a real position, accurate enough and inside a stop's geofence is the server's decision."
+      properties:
+        latitude: { type: number, example: 23.0225 }
+        longitude: { type: number, example: 72.5714 }
+        accuracy_m: { type: number, example: 12, description: "How accurate the device says the reading is, in metres" }
+    RoutePlan:
+      type: object
+      properties:
+        data:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            date: { type: string, format: date }
+            status: { type: string, enum: [draft, published, cancelled] }
+            branch: { type: object }
+            geofence: { type: object, properties: { plan_radius_m: { type: integer, nullable: true }, default_radius_m: { type: integer }, max_accuracy_m: { type: integer } } }
+            stops: { type: array, items: { type: object } }
+            attendance: { type: object, nullable: true }
+            can_mark_attendance: { type: boolean }
+    Attendance:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            date: { type: string, format: date }
+            marked_at: { type: string, format: date-time, description: "The server's clock" }
+            decision: { type: string, enum: [accepted, accepted_override] }
+            position: { type: object }
+            accuracy_m: { type: number }
+            distance_m: { type: number }
+            radius_m: { type: integer }
+            stop: { type: object, nullable: true }
+    FollowupType:
+      type: string
+      enum: [call, visit, email, whatsapp, meeting]
+    LeadInput:
+      type: object
+      description: "Flat fields. `position` is required from someone who works in the field (POST). Ids of company, status, stage, number and approvals cannot be set."
+      properties:
+        name: { type: string, maxLength: 200 }
+        contact_person: { type: string, maxLength: 150 }
+        mobile: { type: string, description: "Ten digits (a +91 or 0 prefix is accepted)" }
+        phone: { type: string }
+        email: { type: string }
+        lead_date: { type: string, format: date }
+        lead_source_id: { type: integer }
+        address_line1: { type: string }
+        address_line2: { type: string }
+        city: { type: string }
+        state_id: { type: integer }
+        district_id: { type: integer }
+        block_id: { type: integer }
+        pin_code: { type: string, example: "380001" }
+        requirement: { type: string, maxLength: 2000 }
+        expected_value: { type: number, description: "Up to 2 decimals" }
+        remarks: { type: string, maxLength: 1000 }
+        location_id: { type: integer, description: "POST only, typed-in leads only" }
+        assigned_to: { type: integer, description: "POST only; needs lead.assign, otherwise you own what you enter" }
+        customer_ledger_id: { type: integer, description: "POST only: makes it an inquiry from an existing customer (needs ledger.view); the name, contact and address come from the ledger" }
+        acknowledge_duplicate: { type: boolean }
+        expected_updated_at: { type: string, format: date-time, description: "PATCH only" }
+        position: { $ref: "#/components/schemas/Position" }
+        interests:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            properties:
+              id: { type: integer, description: "Existing row to update" }
+              item_id: { type: integer, description: "Approved, active item" }
+              description: { type: string, maxLength: 200 }
+              quantity: { type: number }
+              unit_id: { type: integer }
+              expected_rate: { type: number, description: "Only on an inquiry from a customer: the rate they expect, up to 2 decimals" }
+    DealInput:
+      type: object
+      description: "Flat fields and a list of lines. The number, the amounts, the value, the branch, the owner, the stage and the approval state cannot be set."
+      properties:
+        customer_ledger_id: { type: integer, nullable: true, description: "A deal from a new lead may be linked to an approved, active customer; an inquiry's deal is always for the inquiry's customer" }
+        expected_close_date: { type: string, format: date, description: "Required to convert; not in the past, within five years" }
+        probability: { type: integer, minimum: 1, maximum: 99, description: "Defaults to the stage's (discovery 10)" }
+        remarks: { type: string, maxLength: 2000 }
+        expected_updated_at: { type: string, format: date-time, description: "PATCH only" }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [item_id, quantity, expected_rate]
+            properties:
+              id: { type: integer, description: "PATCH: an existing line to update" }
+              lead_interest_id: { type: integer, description: "Convert: the line of the lead this one comes from — every line of the lead must appear" }
+              item_id: { type: integer, description: "Approved, active item" }
+              unit_id: { type: integer, description: "A unit the item is sold in; its own unit when omitted" }
+              quantity: { type: number, description: "More than zero; whole numbers for a unit that cannot be split" }
+              expected_rate: { type: number, description: "Up to 2 decimals" }
+    Deal:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            deal_number: { type: string, example: DL/AHD/26-27/00003 }
+            party_name: { type: string }
+            customer: { type: object, nullable: true }
+            lead: { type: object, properties: { id: { type: integer }, lead_number: { type: string } } }
+            expected_close_date: { type: string, format: date }
+            probability: { type: integer }
+            expected_value: { type: string, example: "1568.75", description: "The sum of the lines, worked out by the server" }
+            weighted_value: { type: string, example: "156.88" }
+            stage: { type: object, properties: { value: { type: string, enum: [discovery, negotiation, quotation, won, lost] }, label: { type: string } } }
+            approval_status: { type: object, properties: { value: { type: string, enum: [draft, pending, approved, rejected] }, label: { type: string } } }
+            owner: { type: object }
+            branch: { type: object }
+            items: { type: array, items: { type: object }, description: "Show and write answers: the lines, each with its amount" }
+            stage_history: { type: array, items: { type: object }, description: "Show only" }
+            updated_at: { type: string, format: date-time }
+            permissions: { type: object, description: "What the caller may do with it" }
+    DealList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Deal/properties/data" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+    Lead:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            lead_number: { type: string, example: LD/AHD/26-27/00012 }
+            type: { type: string, enum: [new, existing], description: "`existing` = an inquiry from an existing customer" }
+            customer: { type: object, nullable: true, description: "The customer ledger of an inquiry" }
+            approval_status: { type: object, nullable: true, description: "Only an inquiry goes through approval" }
+            deal: { type: object, nullable: true, description: "The deal this lead was converted to" }
+            stage: { type: object, properties: { value: { type: string }, label: { type: string } } }
+            channel: { type: string, enum: [manual, import, field, indiamart, justdial, website] }
+            expected_value: { type: string, example: "250000.00" }
+            next_followup_at: { type: string, format: date-time, nullable: true }
+            position: { type: object, nullable: true }
+            deleted_at: { type: string, format: date-time, nullable: true }
+            updated_at: { type: string, format: date-time }
+            permissions: { type: object, description: "Show only: what the caller may do with it" }
+    LeadList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Lead/properties/data" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+    Quotation:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            quotation_number: { type: string, example: QT/AHD/26-27/00001 }
+            revision_no: { type: integer }
+            display_number: { type: string, example: "QT/AHD/26-27/00001 · Rev 1" }
+            is_latest: { type: boolean }
+            state: { type: object, properties: { value: { type: string, enum: [draft, sent, accepted, declined, expired, superseded, cancelled] }, label: { type: string } } }
+            approval_status: { type: object, properties: { value: { type: string, enum: [draft, pending, approved, rejected] }, label: { type: string } } }
+            quotation_date: { type: string, format: date }
+            valid_until: { type: string, format: date }
+            price_date: { type: string, format: date }
+            deal: { type: object, nullable: true }
+            party_name: { type: string }
+            place_of_supply: { type: object, description: "The state the goods are supplied to" }
+            supply_type: { type: string, enum: [intra, inter], description: "`intra` = CGST + SGST, `inter` = IGST" }
+            totals: { type: object, description: "gross, discount, taxable, cgst, sgst, igst, round_off, grand_total — decimal strings" }
+            items: { type: array, items: { type: object }, description: "Show only: the lines, each with its rate, discount, GST rate and amounts" }
+            history: { type: array, items: { type: object }, description: "Show only: every move between states" }
+            sent_at: { type: string, format: date-time, nullable: true }
+            updated_at: { type: string, format: date-time }
+    QuotationList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Quotation/properties/data" } }
+        meta: { $ref: "#/components/schemas/Meta" }
+    Followup:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            lead: { type: object }
+            scheduled_at: { type: string, format: date-time }
+            type: { type: object }
+            status: { type: object, properties: { value: { type: string, enum: [pending, done, cancelled] } } }
+            is_overdue: { type: boolean }
+            assigned_to: { type: object }
+            outcome: { type: object, nullable: true }
+            notes: { type: string, nullable: true }

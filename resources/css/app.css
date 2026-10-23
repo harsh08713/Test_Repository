@@ -1,0 +1,319 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+/* Enums carry badge class strings (e.g. ApprovalStatus::badge()). */
+@source '../../app/Modules/**/Enums/*.php';
+
+@theme {
+    /* Plant-floor look: system UI fonts (what Windows ERP users already read all day), steel blue, charcoal. */
+    --font-sans: 'Segoe UI', 'Helvetica Neue', Arial, Roboto, ui-sans-serif, system-ui, sans-serif;
+
+    /* Brand: steel blue. 600 is the action colour (white text on it is about 7:1). */
+    --color-brand-50: #eef3f8;
+    --color-brand-100: #d9e4ef;
+    --color-brand-200: #b3c9de;
+    --color-brand-500: #3a6ea5;
+    --color-brand-600: #1f5a8f;
+    --color-brand-700: #174772;
+    --color-brand-800: #123a5e;
+
+    /* Sidebar: charcoal steel. */
+    --color-navy-800: #2b333b;
+    --color-navy-900: #1f252b;
+
+    /* Safety amber, kept for attention (the focus ring, the current menu item), never for decoration. */
+    --color-safety-500: #d98a00;
+
+    /* Status colours stay in the plant palette: what Tailwind calls sky is steel blue, indigo is teal-grey, violet is graphite.
+       (Green, amber and red keep their usual meaning: done, waiting, stopped.) */
+    --color-sky-50: #eef3f8;
+    --color-sky-100: #d9e4ef;
+    --color-sky-200: #b3c9de;
+    --color-sky-300: #8aaccb;
+    --color-sky-400: #5f8cb7;
+    --color-sky-500: #3a6ea5;
+    --color-sky-600: #1f5a8f;
+    --color-sky-700: #174772;
+    --color-sky-800: #123a5e;
+    --color-sky-900: #0e2d49;
+    --color-indigo-50: #eaf4f3;
+    --color-indigo-100: #d2e7e5;
+    --color-indigo-200: #a8d0cc;
+    --color-indigo-300: #7bb5af;
+    --color-indigo-400: #4f9a93;
+    --color-indigo-500: #2f7f78;
+    --color-indigo-600: #25665f;
+    --color-indigo-700: #1e524d;
+    --color-indigo-800: #194340;
+    --color-indigo-900: #143532;
+    --color-violet-50: #f1f2f4;
+    --color-violet-100: #e1e4e8;
+    --color-violet-200: #c6ccd4;
+    --color-violet-300: #a5aeb9;
+    --color-violet-400: #7d8896;
+    --color-violet-500: #5d6a79;
+    --color-violet-600: #4a5563;
+    --color-violet-700: #3c4551;
+    --color-violet-800: #2f3640;
+    --color-violet-900: #232930;
+
+    /* Flat, small corners and quiet shadows: a working tool, not a showcase. */
+    --radius-sm: 0.125rem;
+    --radius-md: 0.1875rem;
+    --radius-lg: 0.25rem;
+    --radius-xl: 0.3125rem;
+    --radius-2xl: 0.375rem;
+    --shadow-sm: 0 1px 1px rgb(15 23 42 / 0.06);
+    --shadow-md: 0 1px 3px rgb(15 23 42 / 0.12);
+    --shadow-lg: 0 2px 6px rgb(15 23 42 / 0.14);
+    --shadow-xl: 0 4px 12px rgb(15 23 42 / 0.16);
+    --shadow-2xl: 0 6px 16px rgb(15 23 42 / 0.18);
+}
+
+@layer base {
+    [x-cloak] {
+        display: none !important;
+    }
+
+    html {
+        font-size: 15px;
+    }
+
+    /* A grid cell may shrink below its widest content, so one wide table or label cannot push the page sideways on a phone. */
+    .grid > * {
+        min-width: 0;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-safety-500);
+        outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+}
+
+/*
+ * Shared building blocks. Declared with @utility (not @layer components) because Tailwind 4 only lets
+ * @apply reference utilities, and so views can combine them with variants such as `hover:`.
+ */
+@utility btn {
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-3.5 py-1.5 text-sm font-semibold transition
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-1
+        disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+    @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700;
+}
+
+@utility btn-secondary {
+    @apply btn border border-slate-400 bg-white text-slate-800 hover:bg-slate-100;
+}
+
+@utility btn-danger {
+    @apply btn bg-rose-700 text-white shadow-sm hover:bg-rose-800;
+}
+
+@utility btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100;
+}
+
+@utility btn-sm {
+    @apply px-2.5 py-1 text-xs;
+}
+
+@utility label {
+    @apply mb-1 block text-sm font-semibold text-slate-700;
+}
+
+@utility input {
+    @apply block w-full rounded-md border border-slate-400 bg-white px-3 py-1.5 text-sm text-slate-900
+        placeholder:text-slate-400 focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500/40
+        disabled:bg-slate-100 disabled:text-slate-500;
+}
+
+@utility help {
+    @apply mt-1 text-xs text-slate-600;
+}
+
+@utility error {
+    @apply mt-1 text-xs font-semibold text-rose-700;
+}
+
+@utility card {
+    @apply rounded-md border border-slate-300 bg-white shadow-sm;
+}
+
+@utility card-header {
+    @apply flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-50 px-5 py-3;
+}
+
+@utility card-body {
+    @apply p-5;
+}
+
+@utility table-wrap {
+    @apply overflow-x-auto;
+}
+
+@utility badge {
+    @apply inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-semibold;
+}
+
+/* The follow-up calendar (FullCalendar brings its own styles; these make it sit with the rest of the app). */
+.followup-calendar {
+    --fc-border-color: #e2e8f0;
+    --fc-today-bg-color: #eef3f8;
+    --fc-now-indicator-color: #e11d48;
+    --fc-button-bg-color: #ffffff;
+    --fc-button-border-color: #cbd5e1;
+    --fc-button-text-color: #334155;
+    --fc-button-hover-bg-color: #f8fafc;
+    --fc-button-hover-border-color: #cbd5e1;
+    --fc-button-active-bg-color: #1f5a8f;
+    --fc-button-active-border-color: #1f5a8f;
+    --fc-list-event-hover-bg-color: #f8fafc;
+    font-size: 0.8125rem;
+}
+
+.followup-calendar .fc-toolbar-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.followup-calendar .fc-button {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-transform: none;
+    box-shadow: none;
+}
+
+.followup-calendar .fc-button-primary:not(:disabled).fc-button-active,
+.followup-calendar .fc-button-primary:not(:disabled):active {
+    color: #ffffff;
+}
+
+.followup-calendar .fc-event {
+    cursor: pointer;
+}
+
+/* half-hour rows tall enough for a follow-up's line of text to be read */
+.followup-calendar .fc-timegrid-slot {
+    height: 1.9rem;
+}
+
+.followup-calendar .fc-timegrid-event .fc-event-main {
+    padding: 2px 4px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    overflow: hidden;
+}
+
+.followup-calendar .fc-timegrid-event .fc-event-time {
+    font-weight: 600;
+}
+
+/* on a phone the period gets a line of its own, above the buttons, instead of being squeezed between them */
+@media (max-width: 640px) {
+    .followup-calendar .fc-header-toolbar {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .followup-calendar .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
+        order: -1;
+        width: 100%;
+        text-align: center;
+    }
+}
+
+/* Data tables: structural selectors, so a component layer rather than a utility. */
+@layer components {
+    .data-table {
+        @apply min-w-full divide-y divide-slate-300 text-sm;
+    }
+    .data-table th {
+        @apply bg-slate-100 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-slate-600;
+    }
+    .data-table td {
+        @apply px-3 py-2 align-middle text-slate-800;
+    }
+    .data-table tbody tr {
+        @apply border-t border-slate-200 even:bg-slate-50/50 hover:bg-brand-50;
+    }
+}
+
+/* A narrow table on a phone: one card per row, each value named by its column heading (see resources/js/ui.js). */
+@media (max-width: 639px) {
+    .table-wrap:has(> table.data-table.stacked) {
+        overflow-x: visible;
+    }
+
+    .data-table.stacked,
+    .data-table.stacked tbody {
+        display: block;
+    }
+
+    .data-table.stacked thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    .data-table.stacked tbody tr {
+        display: block;
+        margin-bottom: 0.5rem;
+        border: 1px solid var(--color-slate-300);
+        border-radius: var(--radius-md);
+        background: #fff;
+    }
+
+    .data-table.stacked td {
+        display: flow-root;
+        padding: 0.375rem 0.75rem;
+        text-align: right;
+        border-top: 1px solid var(--color-slate-100);
+    }
+
+    .data-table.stacked td:first-child {
+        border-top: 0;
+    }
+
+    .data-table.stacked td[data-label]::before {
+        content: attr(data-label);
+        float: left;
+        margin-right: 1rem;
+        max-width: 45%;
+        text-align: left;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--color-slate-600);
+    }
+
+    /* a cell with no heading (a tick box, a row of actions) has nothing to name, so it takes the whole line */
+    .data-table.stacked td[data-label='']::before {
+        content: none;
+    }
+
+    .data-table.stacked td[data-label=''] {
+        text-align: left;
+    }
+}

@@ -1,0 +1,86 @@
+name: CI
+
+# Every push and pull request: formatting, static analysis, the whole test suite (including the real-process concurrency tests) and the asset build.
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: industrial_crm_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: industrial_crm_test
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      BACKUP_MYSQLDUMP: mysqldump
+      BACKUP_MYSQL: mysql
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_mysql, bcmath, gd, zip, fileinfo, xml, zlib
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install the PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Set up the environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Install the JavaScript dependencies and build the assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Dependency audit
+        run: |
+          composer audit --no-interaction
+          npm audit --omit=dev
+
+      - name: Formatting (Pint)
+        run: vendor/bin/pint --test
+
+      - name: Static analysis (Larastan)
+        run: php vendor/bin/phpstan analyse --memory-limit=2G --no-progress
+
+      - name: Tests (Pest, including tests/Concurrency)
+        run: php vendor/bin/pest --colors=never
+
+      - name: The documentation matches the code
+        run: |
+          php artisan formezy:docs
+          git diff --exit-code docs/permission-matrix.md docs/route-inventory.md
