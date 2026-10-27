@@ -5,6 +5,7 @@ namespace App\Modules\Integrations\Http\Controllers;
 use App\Modules\Api\Support\ApiException;
 use App\Modules\Api\Support\ApiResponse;
 use App\Modules\Integrations\Models\IntegrationConnection;
+use App\Modules\Integrations\Providers\BrowserForm;
 use App\Modules\Integrations\Providers\ProviderRegistry;
 use App\Modules\Integrations\Services\LeadApiLogStore;
 use App\Modules\Shared\Models\Scopes\Tenancy;
@@ -68,6 +69,16 @@ class WebhookController
 
             if (count($records) > self::MAX_RECORDS) {
                 throw new ApiException('payload_too_large', 'Send at most '.self::MAX_RECORDS.' leads in one request.', 413);
+            }
+
+            // a robot that filled the trap field is told it worked and nothing is written down: it learns nothing to adapt to
+            if ($adapter instanceof BrowserForm) {
+                $received = count($records);
+                $records = array_values(array_filter($records, fn (array $record) => ! $adapter->isBot($record)));
+
+                if ($records === []) {
+                    return ApiResponse::data(['status' => 'accepted', 'received' => $received, 'new' => 0, 'already_known' => 0], 202);
+                }
             }
 
             $new = 0;

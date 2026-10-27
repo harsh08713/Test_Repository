@@ -9,6 +9,7 @@ use App\Modules\Integrations\Models\IntegrationConnection;
 use App\Modules\Integrations\Models\LeadApiLog;
 use App\Modules\Integrations\Providers\ProviderRegistry;
 use App\Modules\Integrations\Services\LeadApiLogStore;
+use App\Modules\Integrations\Services\WebsiteOrigins;
 use App\Modules\Shared\Http\Livewire\Settings\General;
 use App\Modules\Shared\Models\ActivityLog;
 use App\Modules\Shared\Models\Scopes\Tenancy;
@@ -66,18 +67,39 @@ it('is for administrators: people who sell have no business here', function () {
     $this->actingAs($this->admin)->get(route('admin.integrations'))->assertOk()->assertSee('IndiaMART')->assertSee('Just Dial');
 });
 
-it('makes the two connections, switched off, the first time an administrator looks — each with its own unguessable address', function () {
-    ($this->hub)()->assertSeeHtml('wire:key="conn-indiamart"')->assertSeeHtml('wire:key="conn-justdial"')->assertSee('Disabled');
+it('makes the three connections, switched off, the first time an administrator looks — each with its own unguessable address', function () {
+    ($this->hub)()->assertSeeHtml('wire:key="conn-indiamart"')->assertSeeHtml('wire:key="conn-justdial"')->assertSeeHtml('wire:key="conn-website"')->assertSee('Disabled');
 
     $rows = IntegrationConnection::query()->orderBy('provider')->get();
 
-    expect($rows->pluck('provider')->all())->toBe(['indiamart', 'justdial'])->and($rows->pluck('enabled')->unique()->all())->toBe([false])
-        ->and($rows->pluck('mode')->all())->toBe(['pull', 'webhook'])
-        ->and($rows->pluck('public_key')->unique())->toHaveCount(2)->and(strlen($rows[0]->public_key))->toBe(40);
+    expect($rows->pluck('provider')->all())->toBe(['indiamart', 'justdial', 'website'])->and($rows->pluck('enabled')->unique()->all())->toBe([false])
+        ->and($rows->pluck('mode')->all())->toBe(['pull', 'webhook', 'webhook'])
+        ->and($rows->pluck('public_key')->unique())->toHaveCount(3)->and(strlen($rows[0]->public_key))->toBe(40);
 
     // looking again does not make more
     ($this->hub)();
-    expect(IntegrationConnection::query()->count())->toBe(2);
+    expect(IntegrationConnection::query()->count())->toBe(3);
+});
+
+it('shows the website form’s address, the sites it allows and a form to paste — to an editor only, and without ever reading an API key it has none of', function () {
+    $this->settings->set(WebsiteOrigins::SETTING, 'https://www.acme.test', $this->acme->id);
+    ($this->hub)();
+    $form = IntegrationConnection::query()->where('provider', 'website')->sole();
+
+    ($this->hub)()->assertOk()->assertSee('Form address')->assertSee($form->webhookUrl())->assertSee('1 listed')->assertSee('A form to paste into your page')
+        ->assertSee('name="_gotcha"')->assertSee('API key')->assertSeeHtml('Not set');   // only IndiaMART's card has an API key to show: the page rendering at all proves the website one never asks for one
+
+    ($this->hub)($this->viewer)->assertOk()->assertDontSee($form->public_key)->assertDontSee('A form to paste into your page');
+
+    $this->settings->set(WebsiteOrigins::SETTING, '', $this->acme->id);
+    ($this->hub)()->assertSee('None listed: no browser may post');
+});
+
+it('lets the website form be set up like the others, and refuses to pull it', function () {
+    ($this->setUp)('website', ['enabled' => true, 'mode' => 'webhook', 'default_location_id' => (string) $this->ahd->id])->call('save')->assertHasNoErrors();
+    expect(IntegrationConnection::query()->where('provider', 'website')->sole()->enabled)->toBeTrue();
+
+    ($this->setUp)('website', ['enabled' => true, 'mode' => 'pull', 'default_location_id' => (string) $this->ahd->id])->call('save')->assertHasErrors(['form.mode']);
 });
 
 it('lets someone who may only look see the state of things — but not the address, and not the buttons', function () {

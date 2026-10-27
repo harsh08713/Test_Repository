@@ -28,5 +28,20 @@ final readonly class InboundLead
         public ?string $countryIso = null,
         public bool $namePlaceholder = false,
         public bool $doNotCall = false,
+        /**
+         * Channels the visitor agreed to be contacted on, with the wording they agreed to (website forms only; empty = nothing was agreed).
+         *
+         * @var list<string>
+         */
+        public array $consentChannels = [],
+        public ?string $consentText = null,
+        /**
+         * The page's UTM values as sent (the attribution service cleans them).
+         *
+         * @var array<string, string>
+         */
+        public array $utm = [],
+        public ?string $campaignCode = null,
+        public ?string $pageUrl = null,
     ) {}
 }

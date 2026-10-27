@@ -85,6 +85,11 @@ final class LeadApiLogStore
 
     private function secret(string $key, int $companyId): ?string
     {
+        // a push-only provider (a website form) has no API key setting at all
+        if (! isset($this->settings->definitions()[$key])) {
+            return null;
+        }
+
         $value = $this->settings->get($key, $companyId);
 
         return is_string($value) && $value !== '' ? $value : null;

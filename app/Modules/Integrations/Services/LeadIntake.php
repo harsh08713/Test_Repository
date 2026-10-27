@@ -17,6 +17,11 @@ use App\Modules\Integrations\Providers\InboundLead;
 use App\Modules\Integrations\Providers\LeadProvider;
 use App\Modules\Integrations\Providers\ProviderRegistry;
 use App\Modules\Integrations\Support\PayloadRedactor;
+use App\Modules\Marketing\Enums\Channel;
+use App\Modules\Marketing\Models\Campaign;
+use App\Modules\Marketing\Services\CampaignAttribution;
+use App\Modules\Marketing\Services\ConsentService;
+use App\Modules\Marketing\Services\ContactNormalizer;
 use App\Modules\Shared\Models\Comment;
 use App\Modules\Shared\Rules\IndianMobile;
 use App\Modules\Shared\Rules\IndianPinCode;
@@ -53,6 +58,8 @@ final class LeadIntake
         private readonly ProviderRegistry $providers,
         private readonly LeadService $leads,
         private readonly SalesTeamService $teams,
+        private readonly ConsentService $consents,
+        private readonly CampaignAttribution $attribution,
     ) {}
 
     /**
@@ -97,17 +104,24 @@ final class LeadIntake
 
         $work = function () use ($log, $connection, $provider, $actor, $inbound, $mobile): InboundStatus {
             $existing = $mobile === null ? null : $this->openLeadWith($mobile);
+            $consent = $this->consentPlan($inbound, $mobile, $this->email($inbound->email), (int) $connection->company_id);
 
-            return $existing === null
-                ? $this->create($log, $connection, $provider, $actor, $inbound, $mobile)
-                : $this->link($log, $provider, $actor, $inbound, $existing);
+            $status = $existing === null
+                ? $this->create($log, $connection, $provider, $actor, $inbound, $mobile, $consent['lines'])
+                : $this->link($log, $provider, $actor, $inbound, $existing, $consent['lines']);
+
+            // only once the lead (or the note) is safely made: a failure above leaves no consent behind, and a retry works the same plan out again
+            $this->applyConsent($consent['grants'], $log, $inbound->consentText, (int) $connection->company_id);
+
+            return $status;
         };
 
         // two enquiries from one buyer arriving together must make one lead, not two
         return $mobile === null ? $work() : Cache::lock("lead-intake:{$connection->company_id}:{$mobile}", 60)->block(20, $work);
     }
 
-    private function create(LeadApiLog $log, IntegrationConnection $connection, LeadProvider $provider, User $actor, InboundLead $inbound, ?string $mobile): InboundStatus
+    /** @param  list<string>  $consentLines */
+    private function create(LeadApiLog $log, IntegrationConnection $connection, LeadProvider $provider, User $actor, InboundLead $inbound, ?string $mobile, array $consentLines = []): InboundStatus
     {
         $sourceId = LeadSource::query()->where('code', $provider->sourceCode())->where('status', 'active')->value('id')
             ?? throw new IntakeProblem("The standard “{$provider->label()}” lead source is missing or switched off. Switch it on under CRM → Lead masters.");
@@ -130,7 +144,7 @@ final class LeadIntake
                 'address_line1' => $inbound->address === null ? null : Str::limit($inbound->address, 200, ''),
                 'pin_code' => $pin,
                 'requirement' => Str::limit($inbound->message ?? $inbound->product ?? '', 2000, ''),
-                'remarks' => Str::limit($this->remarks($log, $provider, $inbound, $mobile, $email, $pin), 1000, ''),
+                'remarks' => Str::limit($this->remarks($log, $provider, $inbound, $mobile, $email, $pin, $consentLines), 1000, ''),
                 'assigned_to' => $connection->assigned_to === null ? '' : (string) $connection->assigned_to,
                 'acknowledge_duplicate' => true,   // this intake has just looked, under a lock
             ],
@@ -147,6 +161,8 @@ final class LeadIntake
 
         $log->forceFill(['status' => 'created', 'lead_id' => $lead->getKey(), 'processed_at' => now(), 'error' => null])->save();
 
+        $this->attribute($lead, $inbound);
+
         activity('integrations')->performedOn($lead)->event('received')
             ->withProperties(['provider' => $provider->key(), 'provider_lead_id' => $log->provider_lead_id, 'via' => $log->via, 'incomplete' => $incomplete])
             ->log('received');
@@ -158,12 +174,16 @@ final class LeadIntake
         return InboundStatus::Created;
     }
 
-    /** Leave a note on the lead that already has this number, and tell its owner. */
-    private function link(LeadApiLog $log, LeadProvider $provider, User $actor, InboundLead $inbound, Lead $existing): InboundStatus
+    /**
+     * Leave a note on the lead that already has this number, and tell its owner.
+     *
+     * @param  list<string>  $consentLines
+     */
+    private function link(LeadApiLog $log, LeadProvider $provider, User $actor, InboundLead $inbound, Lead $existing, array $consentLines = []): InboundStatus
     {
         $summary = Str::limit(trim(($inbound->kind === null ? '' : "{$inbound->kind}: ").($inbound->message ?? $inbound->product ?? 'no message')), 300, '…');
 
-        $note = new Comment(['user_id' => $actor->getKey(), 'body' => "Another {$provider->label()} enquiry from this number (id {$log->provider_lead_id}). {$summary}"]);
+        $note = new Comment(['user_id' => $actor->getKey(), 'body' => trim("Another {$provider->label()} enquiry from this number (id {$log->provider_lead_id}). {$summary} ".implode(' ', $consentLines))]);
         $note->forceFill([
             'visibility' => 'internal', 'company_id' => (int) $existing->company_id,
             'commentable_type' => $existing->getMorphClass(), 'commentable_id' => $existing->getKey(),
@@ -220,7 +240,8 @@ final class LeadIntake
         return ($when === null || $when->isFuture() ? now() : $when)->toDateString();
     }
 
-    private function remarks(LeadApiLog $log, LeadProvider $provider, InboundLead $inbound, ?string $mobile, ?string $email, ?string $pin): string
+    /** @param  list<string>  $consentLines */
+    private function remarks(LeadApiLog $log, LeadProvider $provider, InboundLead $inbound, ?string $mobile, ?string $email, ?string $pin, array $consentLines = []): string
     {
         $lines = [trim("{$provider->label()} ".($inbound->kind === null ? 'enquiry' : strtolower($inbound->kind))." (id {$log->provider_lead_id})".($inbound->receivedAt === null ? '' : ', received '.$inbound->receivedAt->format('j M Y, H:i')).'.')];
 
@@ -252,7 +273,87 @@ final class LeadIntake
             $lines[] = 'On the do-not-call register: do not phone this number.';
         }
 
-        return implode("\n", $lines);
+        if ($inbound->pageUrl !== null) {
+            $lines[] = "Sent from the page {$inbound->pageUrl}.";
+        }
+
+        return implode("\n", [...$lines, ...$consentLines]);
+    }
+
+    /**
+     * What the visitor ticked, read before anything is made and written only afterwards (`applyConsent`). A tick is taken as an opt-in for a channel only
+     * when the form named the channel and gave the wording, there is a usable address for it, and that address has not opted **out**: an opt-out is
+     * the person's own word, and an unverified form (nobody has proved the number is the visitor's) must not undo it. The lines go onto the lead so the
+     * person who calls knows what was agreed.
+     *
+     * @return array{grants: list<array{0: Channel, 1: string}>, lines: list<string>}
+     */
+    private function consentPlan(InboundLead $inbound, ?string $mobile, ?string $email, int $companyId): array
+    {
+        $grants = [];
+        $lines = [];
+
+        foreach ($inbound->consentChannels as $name) {
+            $channel = Channel::tryFrom($name);
+            $address = $channel === Channel::Email ? $email : $mobile;
+
+            if ($channel === null) {
+                continue;
+            }
+
+            if ($address === null) {
+                $lines[] = "Ticked the box for {$channel->label()} but gave no usable {$channel->addressLabel()}, so nothing was recorded.";
+
+                continue;
+            }
+
+            $normal = ContactNormalizer::address($channel, $address);
+            $latest = $normal === null ? null : $this->consents->latest($channel, $normal, $companyId);
+
+            if ($latest !== null && $latest->status === 'opted_out') {
+                $lines[] = "Ticked the box for {$channel->label()}, but this {$channel->addressLabel()} had opted out and the form cannot prove who filled it in: ask them first.";
+
+                continue;
+            }
+
+            $grants[] = [$channel, $address];
+            $lines[] = "Agreed on the form to be contacted by {$channel->label()}: “{$inbound->consentText}”.";
+        }
+
+        return ['grants' => $grants, 'lines' => $lines];
+    }
+
+    /**
+     * The consent the plan allowed. A failure is reported and never undoes the lead: the person can still be asked again, and what is on the lead says what
+     * was ticked.
+     *
+     * @param  list<array{0: Channel, 1: string}>  $grants
+     */
+    private function applyConsent(array $grants, LeadApiLog $log, ?string $text, int $companyId): void
+    {
+        foreach ($grants as [$channel, $address]) {
+            try {
+                $this->consents->record($channel, $address, 'opted_in', 'website', "Ticked on the website form (id {$log->provider_lead_id}): {$text}", null, $companyId);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+    }
+
+    /** Credit the lead to the campaign and UTM values its page carried. Attribution must never stop a lead from being made. */
+    private function attribute(Lead $lead, InboundLead $inbound): void
+    {
+        if ($inbound->utm === [] && $inbound->campaignCode === null) {
+            return;
+        }
+
+        try {
+            $campaignId = $inbound->campaignCode === null ? null : Campaign::query()->where('code', $inbound->campaignCode)->value('id');
+
+            $this->attribution->tag($lead, $campaignId === null ? null : (int) $campaignId, $inbound->utm, 'link');
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     /** A lead nobody owns yet is the pool's: tell the people who hand leads out (in the app only, and no more than twenty of them). */

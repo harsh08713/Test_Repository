@@ -210,7 +210,7 @@ it('says plainly that Just Dial has nothing to pull', function () {
 it('knows its providers by key', function () {
     $registry = app(ProviderRegistry::class);
 
-    expect(array_keys($registry->all()))->toBe(['indiamart', 'justdial'])
+    expect(array_keys($registry->all()))->toBe(['indiamart', 'justdial', 'website'])
         ->and($registry->get('indiamart'))->toBeInstanceOf(IndiaMartProvider::class)->and($registry->has('zomato'))->toBeFalse()
         ->and(fn () => $registry->get('zomato'))->toThrow(InvalidArgumentException::class);
 });

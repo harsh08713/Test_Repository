@@ -1,10 +1,12 @@
-# Lead marketplaces — IndiaMART and Just Dial
+# Where leads come from outside — IndiaMART, Just Dial and the website form
 
 Screens: **Administration → Integrations** (status and set-up) and **Integrations → Inbound lead log** (what each provider delivered).
 Tables: [schema.md](schema.md). The API a phone uses is separate: [api.md](api.md).
 
-Nothing here can be tested against a live account until you have one. Everything below is built and tested against the shapes
-the providers **document** (IndiaMART) or are **known to send** (Just Dial). **Live verification is pending** — see the end.
+Nothing here can be tested against a live account until you have one. IndiaMART and Just Dial are built and tested against the shapes
+the providers **document** (IndiaMART) or are **known to send** (Just Dial); **live verification is pending** — see the end. The
+**website form** (Phase 16) is different: its format is ours, so it is documented below rather than guessed, and its cross-origin behaviour
+is checked in a real browser (`npm run test:browser`).
 
 ## How a lead gets in
 
@@ -86,6 +88,64 @@ The record layout is the one such integrations commonly receive and is read tole
 `company`, `parentid`, `dncmobile`, `dncphone`. **Ask your account manager for a sample payload** and compare; if a name differs only
 `JustDialProvider` changes.
 
+## The website form
+
+The company's own enquiry form (on its site, a landing page, a campaign page) posts straight to the CRM and becomes a lead through the **same
+log, de-duplication and intake** as the marketplaces. It is the one provider whose sender is a **visitor's browser**, so it adds what a
+browser needs and what a stranger must not be able to abuse.
+
+**Set-up.** *Administration → Integrations → Website form → Set up* (branch, owner or pool, on); then **Company settings → Integrations →
+Websites allowed to send leads from a visitor's browser** — your own site's address, e.g. `https://www.example.com` (several: separate with
+commas or spaces). The card shows the **form address** and a **form to paste** into the page (change the fields as you like).
+
+**What the browser may send** (`POST` to the form address; one flat JSON object, or ordinary form fields). Only a way to reach the person is
+required — `mobile` (or `phone`, `whatsapp`) **or** `email`; anything else is optional.
+
+| Field | Becomes |
+|---|---|
+| `name` (or `first_name` + `last_name`), `company` | the lead's name (company over person, as for Just Dial); neither = “Website form enquiry <mobile>”, **incomplete** |
+| `mobile` / `phone`, `email`, `city`, `state`, `pincode`, `address` | the lead's contact details (invalid ones are left off and written into the remarks, as for the marketplaces) |
+| `product`, `message` | the item of interest and the requirement |
+| `form` | what the form is called (“Contact form”) — shown in the remarks |
+| `page_url` | the page it was sent from, **without its query string or fragment** (a link may carry a token or a person's details); only `http`/`https` |
+| `utm_source` `utm_medium` `utm_campaign` `utm_term` `utm_content` | kept on the lead as plain text (≤ 100 characters each, nothing but letters, digits, space, `_` `.` `-`) |
+| `campaign` | a campaign code (`CP/…`): the lead is credited to it as **link** attribution; an unknown code is ignored (the UTM values are still kept) |
+| `submission_id` | the page's own id for this submission (`A–Z a–z 0–9 _ -`, 8–64 characters), so a double click is one lead. Without one, a submission is identified by its **content and the day**: the same person sending the same words twice in a day is one lead |
+| `consent`, `consent_text`, `consent_channels` | see *What the visitor agreed to* below |
+| `_gotcha` | a hidden trap field (see below): it must be **empty** |
+| `thanks_url` | for a plain HTML form (no script): the page to send the visitor to afterwards — only on a listed site, never elsewhere |
+
+**What protects it.** The form address sits in the page's source, so it is **not a secret** — say so plainly. What stands between it and abuse:
+
+| Layer | What it does | What it does not do |
+|---|---|---|
+| **Allowed websites** (`WebsiteFormCors`) | A browser says which page it is on (`Origin`). Only sites you list may post; any other gets **403 `origin_not_allowed`**, and its browser will not hand the answer to the page. The answer to a listed site carries `Access-Control-Allow-Origin` — also a refusal and a throttle, so the page's script can say why | It cannot stop a **script or a server**, which sends no `Origin`: such a request is judged by the layers below. Nothing listed = no browser at all. Origins compare exactly (scheme + host + port; no wildcards; `http` ≠ `https`) |
+| **Trap field** `_gotcha` | Hidden from people, filled in by robots. A filled trap is answered **202 as if it worked** and nothing is written down, so the robot learns nothing to adapt to | A robot that skips the field, or a person who types something into it |
+| **Throttle** | **10 posts a minute from one visitor** (address + form), 120 a minute to the whole form, 600 from one address; over it: 429 with `Retry-After` | A slow, patient flood |
+| **Size and shape** | 64 KB, one submission, JSON or form fields; a body with no way to reach the person is 400 | — |
+| **Signing** | A **relay or server** that posts the form can sign it (same headers as the marketplaces; secret: *Company settings → Website form signing secret*). **A browser cannot sign**, so while a secret is set browser posts are refused (401) — leave it empty for a form on a page | — |
+
+No CAPTCHA is built in (the provider — reCAPTCHA, hCaptcha, Turnstile — is a choice for the owner; it would be one more layer in front of the same address).
+
+**What the visitor agreed to.** A lead from a form is **not** consent to market to the person, just like a marketplace lead. A tick box on the form can
+be: send `consent` (`on`/`true`/`yes`/`1`), the **exact wording beside the box** in `consent_text`, and the channels it covered in `consent_channels`
+(`email`, `whatsapp`, `sms`; an array or a comma-separated list). Then, **and only then**, an **opt-in** is recorded for each named channel
+(`contact_consents`, source `website`, the submission id and the wording in the note) and the lead's remarks say what was agreed. Without the wording or
+without a channel nothing is recorded. Three more rules:
+
+* **An opt-out is never undone by a form.** Nobody has proved the number or address is the visitor's, so if the address has opted out the tick is **not**
+  recorded and the lead's remarks tell whoever works it to ask the person first.
+* A ticked channel with no usable address (an invalid e-mail, no mobile) records nothing and says so on the lead.
+* The consent is recorded **after** the lead is made, and a failure to record it never undoes the lead.
+
+Because there is no OTP, a form can still be used to opt **somebody else's** number in (the history shows where it came from and what it said). Treat the
+website opt-in as *claimed*, not *verified*; double opt-in (a confirmation message the person answers) is the strong answer and is not built.
+
+**A second enquiry from a number already on an open lead** becomes a note on that lead (as for the marketplaces), now also carrying what was agreed.
+
+**Plain HTML form, no script.** A form whose `action` is the address and which posts ordinary fields works too: add a hidden `thanks_url` on your site and
+the visitor is sent there (`303`) after the lead is accepted. Without it, or with a page that is not on a listed site, the browser shows the JSON answer.
+
 ## Setting a connection up
 
 1. **Company settings → Integrations**: save the IndiaMART **API key** (pull) and/or a **signing secret** (see below). Secrets are
@@ -104,7 +164,8 @@ the last error and when it will try again).
 
 ## The webhook contract
 
-`POST /api/webhooks/{provider}/{key}` — `provider` is `indiamart` or `justdial`; `key` is the connection's 40-character key.
+`POST /api/webhooks/{provider}/{key}` — `provider` is `indiamart`, `justdial` or `website`; `key` is the connection's 40-character key.
+(The website form also answers the browser's `OPTIONS` preflight on the same address; every other provider answers it 404.)
 
 * **Body:** JSON — one lead, a list, or the provider's wrapper (`{"RESPONSE": …}`, `{"leads": […]}`) — or, for Just Dial, form fields.
   At most 64 KB and 200 leads.
@@ -116,9 +177,10 @@ the last error and when it will try again).
 | 400 | `bad_request` | Not JSON, or no lead in it |
 | 401 | `invalid_signature` | A signing secret is set and the signature does not match the exact body |
 | 401 | `stale_timestamp` | A signing secret is set and the timestamp is missing or more than 5 minutes off |
+| 403 | `origin_not_allowed` | **Website form only:** a browser on a site the company has not listed (also for its preflight). Only a switched-on form with a right key says this; a wrong key is 404 |
 | 404 | `not_found` | Unknown provider, wrong key, switched off, or not open to pushes — the **same** answer for all, so nothing is confirmed to a guesser |
-| 413 | `payload_too_large` | Over 64 KB or 200 leads |
-| 429 | `too_many_requests` | More than 120 a minute to one address, or 600 a minute from one IP address |
+| 413 | `payload_too_large` | Over 64 KB or 200 leads (the website form takes one) |
+| 429 | `too_many_requests` | More than 120 a minute to one address, or 600 a minute from one IP address; the website form also 10 a minute from one visitor |
 
 **Signing (optional but recommended).** The providers cannot sign, so by default **the address is the only secret** (the screen says
 *Unsigned*). To harden it, put a small relay you control in front (or use a gateway that can add headers), save a **signing secret**
@@ -172,13 +234,23 @@ Whether keeping marketplace buyers' data is compliant for your business is for t
 
 Implement `LeadProvider` (its key, source code, channel, what it can do, `fetch`, `extractRecords`, `normalise` — it never touches the
 database), register it in `IntegrationsServiceProvider`, and add its standard source to `SeedCrmDefaults`. The log, the intake, the
-pull, the webhook, the screens and the retries are shared.
+pull, the webhook, the screens and the retries are shared. A provider that a visitor's browser posts to also implements `BrowserForm`
+(its robot test and the form it hands out); the origin rules, the preflight and the per-visitor throttle are then the website form's
+and are applied by provider key — telephony, when it comes, is a different kind of provider (a call, not a form).
+
+Two framework facts the website form taught: Laravel sorts the `throttle` middleware **ahead of any middleware it does not know**, so a
+middleware that must see a throttled answer has to be put before it in the priority list (`bootstrap/app.php`,
+`prependToPriorityList`); and the CORS settings in `config/cors.php` cover the mobile API only (`api/v1/*`) — the website form answers
+its own browsers, site by site.
 
 ## Known limits and what is pending
 
 * **Pending live verification**: IndiaMART against a real key (field names beyond the documented ones; the push payload layout) and
   Just Dial's actual payload and delivery behaviour. The contract tests pin what we believe; reality may differ in small ways.
 * IndiaMART's push cannot be signed by IndiaMART; Just Dial's cannot either. Signing needs a relay you run.
+* **Website form:** no CAPTCHA, no double opt-in, and the form address is public by nature (see *What protects it*). Not tried on a live website yet — the
+  browser check proves the cross-origin behaviour between two origins on one machine, and the tests prove the rest; a first real page is the next proof.
+  Several websites per company share one form address (list them all); one form per site or per campaign is not built.
 * A buyer's second enquiry from a number that is only on a **closed** lead makes a **new** lead (a lost enquiry coming back is a new chance).
 * Leads from a marketplace are given to one person or left in the pool; there is no round-robin or rule-based routing yet.
 * There is no export of the log, and no per-lead “re-pull”: use *Retry* for a failed delivery.

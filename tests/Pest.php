@@ -673,6 +673,17 @@ function justDialRecord(array $over = []): array
     ];
 }
 
+/** What the website form on the company's page posts (our own documented layout), with `$over` laid on top. @param  array<string, mixed>  $over */
+function websiteRecord(array $over = []): array
+{
+    return [
+        'name' => 'Meera Shah', 'company' => 'Shree Ganesh Traders', 'mobile' => '98765 43210', 'email' => 'Meera@Example.test', 'city' => 'Ahmedabad',
+        'pincode' => '380001', 'product' => 'Hex Bolt M10', 'message' => 'Need 5000 pcs, please quote.', 'form' => 'Contact form',
+        'page_url' => 'https://www.acme.test/contact?utm_source=google&token=SECRET-IN-LINK#top', 'submission_id' => 'sub-8d3f1a2b',
+        ...$over,
+    ];
+}
+
 /** The body of IndiaMART's Pull API answer. @param  list<array<string, mixed>>  $records */
 function indiaMartAnswer(array $records, int $code = 200): array
 {

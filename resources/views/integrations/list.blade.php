@@ -2,7 +2,7 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="max-w-3xl">
             <h1 class="text-2xl font-semibold text-slate-900">Integrations</h1>
-            <p class="mt-1 text-sm text-slate-500">Where leads come from outside: IndiaMART and Just Dial. Each lead that arrives is written to a log first, then becomes a lead in the branch you choose — or, if the same mobile number is already on an open lead, a note on that one. The API key and the signing secret are kept in <a href="{{ route('admin.settings') }}" wire:navigate class="text-brand-700 underline">Company settings</a>.</p>
+            <p class="mt-1 text-sm text-slate-500">Where leads come from outside: IndiaMART, Just Dial and the enquiry form on your own website. Each lead that arrives is written to a log first, then becomes a lead in the branch you choose — or, if the same mobile number is already on an open lead, a note on that one. The API key and the signing secret are kept in <a href="{{ route('admin.settings') }}" wire:navigate class="text-brand-700 underline">Company settings</a>.</p>
         </div>
         <a href="{{ route('admin.integrations.leads') }}" wire:navigate class="btn-secondary">Inbound lead log</a>
     </div>
@@ -14,6 +14,7 @@
             $status = $c->status();
             $key = $provider->key();
             $note = $notes[$key] ?? null;
+            $isForm = $provider instanceof \App\Modules\Integrations\Providers\BrowserForm;
         @endphp
         <div class="card" wire:key="conn-{{ $key }}">
             <div class="card-header flex-wrap">
@@ -21,7 +22,7 @@
                     <h2 class="text-lg font-semibold text-slate-900">{{ $provider->label() }}</h2>
                     <span class="badge {{ $status->badge() }}">{{ $status->label() }}</span>
                     @if ($c->enabled)
-                        <span class="text-xs text-slate-500">{{ ['pull' => 'We pull its leads', 'webhook' => 'It pushes leads to us', 'both' => 'Pull and push'][$c->mode] }}</span>
+                        <span class="text-xs text-slate-500">{{ $isForm ? 'Visitors’ browsers post to us' : ['pull' => 'We pull its leads', 'webhook' => 'It pushes leads to us', 'both' => 'Pull and push'][$c->mode] }}</span>
                     @endif
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -64,14 +65,16 @@
                     @if ($provider->canPull())
                         <div><dt class="text-slate-500">API key</dt><dd><span class="badge {{ $row['apiKeySet'] ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">{{ $row['apiKeySet'] ? 'Saved' : 'Not set' }}</span></dd></div>
                     @endif
-                    @if ($c->receivesPushes())
+                    @if ($isForm)
+                        <div><dt class="text-slate-500">Websites allowed</dt><dd><span class="badge {{ count($row['origins']) > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">{{ count($row['origins']) > 0 ? count($row['origins']).' listed' : 'None listed: no browser may post' }}</span></dd></div>
+                    @elseif ($c->receivesPushes())
                         <div><dt class="text-slate-500">Pushes are</dt><dd><span class="badge {{ $row['signed'] ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800' }}">{{ $row['signed'] ? 'Signed' : 'Unsigned (the address is the only secret)' }}</span></dd></div>
                     @endif
                 </dl>
 
                 @if ($canEdit && $c->receivesPushes())
                     <div>
-                        <label class="label" for="url-{{ $key }}">Webhook address — give this to {{ $provider->label() }}</label>
+                        <label class="label" for="url-{{ $key }}">{{ $isForm ? 'Form address — your page posts the enquiry here' : 'Webhook address — give this to '.$provider->label() }}</label>
                         <div class="flex flex-wrap items-center gap-2" x-data="{ copied: false }">
                             <input id="url-{{ $key }}" type="text" readonly value="{{ $c->webhookUrl() }}" class="input max-w-2xl font-mono text-xs" x-ref="url" onfocus="this.select()">
                             <button type="button" class="btn-secondary btn-sm" x-on:click="navigator.clipboard.writeText($refs.url.value).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"><span x-show="!copied">Copy</span><span x-show="copied" x-cloak>Copied</span></button>
@@ -79,8 +82,20 @@
                                 <button type="button" wire:click="askForNewAddress('{{ $key }}')" class="btn-ghost btn-sm">New address…</button>
                             @endif
                         </div>
-                        <p class="help">Anyone holding this address can send leads, so treat it like a password. @unless ($provider->canPull()) {{ $provider->label() }} has no self-service setting for it: send the address to your {{ $provider->label() }} account manager. @endunless</p>
+                        @if ($isForm)
+                            <p class="help">This address is in your page’s source, so anyone can read it: it is not a secret. What protects it is the list of websites you allow (Company settings → Integrations), a hidden trap field that robots fill in, and a limit of ten posts a minute from one visitor.</p>
+                        @else
+                            <p class="help">Anyone holding this address can send leads, so treat it like a password. @unless ($provider->canPull()) {{ $provider->label() }} has no self-service setting for it: send the address to your {{ $provider->label() }} account manager. @endunless</p>
+                        @endif
                     </div>
+                @endif
+
+                @if ($isForm && $row['snippet'])
+                    <details class="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm" wire:key="snippet-{{ $key }}">
+                        <summary class="cursor-pointer font-medium text-slate-800">A form to paste into your page</summary>
+                        <p class="help mt-2">A starting point: change the fields and the wording as you like. Only a way to reach the person (<code>mobile</code> or <code>email</code>) is needed; the page’s <code>utm_…</code> values and campaign code travel with it. The allowed sites and the other fields are explained in the integrations guide.</p>
+                        <textarea readonly rows="14" class="input mt-2 font-mono text-xs" onfocus="this.select()" aria-label="Form to paste into your page">{{ $row['snippet'] }}</textarea>
+                    </details>
                 @endif
 
                 @if ($confirming === $key)

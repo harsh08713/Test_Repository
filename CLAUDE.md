@@ -43,7 +43,7 @@ Never report a check as passed unless it was run. Setup and deployment: [README.
 | M1 | **Maintenance**: assets, preventive schedules, work orders (breakdown / preventive / corrective) with tasks, spare parts from stock, hours and downtime — [docs/maintenance.md](docs/maintenance.md) | **built** — awaiting owner review |
 | R1 | **Profit Leakage Radar** (first slice of the "Industrial ERP 2026" brief): daily sweep proposes findings from expired stock, scrap and rejected receipts; a person reports or dismisses them; nothing automatic — [docs/radar.md](docs/radar.md) | **built** — awaiting owner review (verified-savings ledger, Tally integration + cash flow, AI copilot are next; pilot = plastics / packaging) |
 | R2 | **Verified Savings Ledger**: a savings measurement per verified corrective action (actual loss before / after from the loss records, volume or day normalisation, cost), Finance verifies it (not the maker or the action owner), overlapping windows refused, recurrence flagged — [docs/savings.md](docs/savings.md) | **built** — awaiting owner review (Tally integration + cash flow and the AI copilot are next) |
-| 16 | Omnichannel integrations | **first slice built** (WhatsApp + SMS sending, delivery reports, STOP replies, sandbox mode — [docs/channels.md](docs/channels.md); **not verified on a live account**); voice/telephony and website lead capture still to do |
+| 16 | Omnichannel integrations | **second slice built**: WhatsApp + SMS sending, delivery reports, STOP replies, sandbox mode ([docs/channels.md](docs/channels.md); **not verified on a live account**) and **website lead capture** (the company's own form posts across origins; allowed sites, trap field, per-visitor throttle, UTM/campaign, opt-in consent — [docs/integrations.md](docs/integrations.md); checked in a real browser, not yet on a live site); voice/telephony still to do (needs the owner's provider choice) |
 | 17 | Advanced field sales + PWA sync | |
 | 18 | AI assistance + forecasting | |
 | 19 | Optional extensions (portal, documents/e-sign, tickets, commission) | |
@@ -277,6 +277,13 @@ Confirmed by the owner on 2026-10-12 (Phase 1 sign-off) — treat as settled, do
     measurements of the same loss may not have overlapping windows; `savings:check-recurrence` flags a loss that came back. Finance-verified savings (`LossFigures::financeVerifiedSavings`) are **never added to** the action's own
     `verified_result_amount` (`realised_savings`). Losses are read only through `LossFigures::actualFor()`. The executive dashboard shows the Radar backlog (as an *estimate*) and Finance-verified savings (`DashboardAnalytics::leakage`); reports `radar-findings` and `verified-savings` (40 reports in all). **Open:** API presence, price/mix normalisation, a multi-process race test of the branch lock.
 
+35. **Website lead capture (Phase 16, second slice)** ([docs/integrations.md](docs/integrations.md)) — a third provider, `website` (`WebsiteProvider`, `BrowserForm`), through the same webhook, log and `LeadIntake` as the marketplaces; the sender is
+    a **visitor's browser**, so the form address is public by nature. Protection is layered and said so: the company's **allowed websites** (`integrations.website_allowed_origins`, exact scheme+host+port, nothing listed = no browser; `WebsiteFormCors`
+    answers the preflight and puts the site's `Access-Control-Allow-Origin` even on a refusal or a 429), a hidden **`_gotcha`** trap (a robot is told 202 and nothing is written), **10 posts a minute per visitor**; a script or server sends no `Origin`
+    and is not stopped by the list. A form's tick is **consent only when the form sends the wording and the channels**, is recorded after the lead (source `website`), and **never undoes an opt-out**; no double opt-in (a claim, not proof). The page's
+    `utm_*` and `campaign` code become link attribution; `CampaignAttribution::tag` no longer wipes an inferred campaign when only UTM values arrive. `config/cors.php` now covers `api/v1/*` only. **Open for the owner:** a CAPTCHA provider, double
+    opt-in, one form per site/campaign, a first live page; voice/telephony still needs a provider choice.
+
 ## Commands
 
 PHP here is **not** XAMPP's (8.2). Put the portable 8.3 first on PATH in every shell:
@@ -343,6 +350,9 @@ that passed every server-side test were found only in a real browser (see Gotcha
   (the key is in IndiaMART's *URL*: catch `ConnectionException` and never pass its message on). A failure that only a person can fix is
   an `IntakeProblem` (not retried); the delivery stays `failed` as the dead-letter queue. The webhook answers 404 identically for every
   wrong address and 202 for anything stored, even if the lead later fails.
+- **Website form** (same module): `WebsiteProvider` is an adapter like the others (reads its own documented format, touches nothing); what only a browser needs lives outside it — `WebsiteOrigins` (the allowed sites, the only place an origin
+  is normalised), `WebsiteFormCors` (preflight, headers, thank-you redirect) and the robot test through `BrowserForm`. A visitor's tick reaches `ConsentService` only through `LeadIntake` (plan before the lead, write after it; never over an opt-out).
+  `LeadApiLogStore`/`IntegrationList` must not assume every provider has an API key.
 - **Inquiries and deals** (`app/Modules/CRM`, [docs/deals.md](docs/deals.md)): lead data still has one door, `LeadService` — an
   inquiry is `create()` with `lead.customer_ledger_id` (the customer snapshot and the line rules live there); **deal data has one door,
   `DealService`** (`convert` / `update` / `updateProgress` / `changeStage` / `reassign` / `setStageBySystem`). Which deals a person sees is
@@ -480,6 +490,12 @@ that passed every server-side test were found only in a real browser (see Gotcha
   company's parent even if a tampered id gets past form validation.
 
 ## Gotchas learned the hard way
+
+- **Laravel sorts `throttle` ahead of any middleware it does not know**, whatever order a route group lists them in — so a middleware listed before `throttle:…` still ran *after* it and never saw the 429 (the website form's CORS headers were missing
+  from a throttled answer until a test said so). Put it in the priority list: `$middleware->prependToPriorityList(before: ThrottleRequests::class, prepend: …)` in `bootstrap/app.php` (the Router has no such method in this version). An exception thrown
+  *inside* a middleware's `$next` is turned into a response by the pipeline, so a middleware placed correctly does see and can decorate a refusal.
+- **`SettingsService::get()` throws on a key with no definition.** A provider with no pull API has no `integrations.<provider>_api_key`, so code that loops over providers (`LeadApiLogStore::secrets`, the integrations screen) must ask `canPull()` /
+  `definitions()` first — a new provider failed the whole screen until it did.
 
 - **`INSERT IGNORE` then `SELECT … FOR UPDATE` on the same row deadlocks under concurrency**: on an existing row INSERT IGNORE takes a *shared* lock, and two
   transactions both upgrading to exclusive deadlock (found by `tests/Concurrency/StockConcurrencyTest` on `stock_balances`). Take the exclusive lock directly with

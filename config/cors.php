@@ -10,7 +10,8 @@
 */
 
 return [
-    'paths' => ['api/*'],
+    // The mobile API only. A website form's address (`api/webhooks/website/…`) is deliberately not here: it answers its own browsers, site by site (WebsiteFormCors).
+    'paths' => ['api/v1/*'],
 
     'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 

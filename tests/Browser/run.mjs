@@ -281,7 +281,8 @@ const checks = {
         await page.click('button[wire\\:click^=inspect]', 0);
         expect(await page.until(js`!!document.querySelector('[role=dialog] pre')`), 'the delivery did not open');
         const payload = await page.evaluate(js`document.querySelector('[role=dialog] pre').innerText`);
-        expect(payload.includes('"leadid"') || payload.includes('"UNIQUE_QUERY_ID"'), `the payload shown was ${payload.slice(0, 80)}`);
+        // whichever delivery is newest: a Just Dial or IndiaMART one from the demo data, or the website form's (made by the website check when it has run before)
+        expect(payload.includes('"leadid"') || payload.includes('"UNIQUE_QUERY_ID"') || payload.includes('"submission_id"'), `the payload shown was ${payload.slice(0, 80)}`);
         await page.click('button[aria-label=Close]');
         expect(await page.until(js`!document.querySelector('[role=dialog]')`), 'the dialog did not close');
     },
@@ -858,6 +859,74 @@ const checks = {
 
         const lost = await page.until(`${notices}.length ? ${notices} : false`, 15000);
         expect(Array.isArray(lost) && lost.some((n) => n.startsWith('The deal is marked as lost')), `after losing the deal the page said: ${JSON.stringify(lost)}`);
+    },
+    async 'website form: a page on a listed site can post a lead across origins, and a page on any other site is blocked by the browser'({ page, expect }) {
+        await page.signIn('companyadmin@formezy.test');
+        const home = origin;                                     // the CRM itself, e.g. http://127.0.0.1:8731
+        const site = origin.replace('127.0.0.1', 'localhost');   // "the company's website": the same server under another name is another origin to a browser
+
+        if (site === home) {
+            throw new Skipped('the check needs the server at 127.0.0.1 so that localhost can stand for the company’s website');
+        }
+
+        // as the owner would: list the website under Company settings, then switch the form on under Integrations
+        await page.goto('/admin/settings');
+        expect(await page.fill('#s-integrations__website_allowed_origins', site), 'the settings page has no field for the allowed websites');
+        await page.click('form[wire\\:submit=save] button[type=submit]', 0);
+        expect(await page.until(js`${notices}.some(n => n.length > 0)`, 15000), 'saving the settings said nothing');
+
+        await page.goto('/admin/integrations');
+        expect(await page.click('button[wire\\:click="edit(\'website\')"]', 0), 'the website form has no Set up button');
+        expect(await page.until(js`!!document.querySelector('#f-branch option[value]:not([value=""])')`), 'the set-up form offered no branch');
+        await page.fill('#f-branch', await page.evaluate(js`document.querySelector('#f-branch option[value]:not([value=""])').value`), 400);
+        // choosing a branch asks the server (it re-lists who can own the leads); a Save pressed meanwhile is lost, so wait until the button says nothing is in flight
+        expect(await page.until(js`document.querySelector('form[wire\\:submit=save] button[type=submit]').disabled === false`), 'the set-up form never became idle after choosing the branch');
+
+        if (!(await page.evaluate(js`document.querySelector('input[wire\\:model="form.enabled"]').checked`))) {
+            await page.click('input[wire\\:model="form.enabled"]', 100);
+        }
+
+        await page.click('form[wire\\:submit=save] button[type=submit]', 0);
+        expect(await page.until(js`${notices}.some(n => n.includes('switched on'))`, 15000), `after saving the website form the page said: ${JSON.stringify(await page.evaluate(notices))}, with errors ${JSON.stringify(await page.evaluate(js`[...document.querySelectorAll('.error')].map(e => e.textContent.trim())`))}`);
+
+        const address = await page.evaluate(js`document.querySelector('#url-website')?.value ?? ''`);
+        expect(address.includes('/api/webhooks/website/'), `the form address is not shown (${address})`);
+
+        // can the browser reach the server under the website's name at all? (a machine where localhost goes elsewhere cannot run this check)
+        const reachable = await page.evaluate(js`fetch(${JSON.stringify(site + '/up')}, { mode: 'no-cors' }).then(() => true, () => false)`);
+        if (!reachable) {
+            throw new Skipped(`${site} does not reach the development server on this machine`);
+        }
+
+        const mobile = `9${String(Date.now()).slice(-9)}`;
+        const post = (url, name) => js`fetch(${JSON.stringify(url)}, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ name: ${JSON.stringify(name)}, mobile: ${JSON.stringify(mobile)}, message: 'Browser check enquiry', page_url: location.href + '?token=NOT-KEPT', submission_id: 'browser-' + Date.now() }),
+        }).then(async (r) => ({ status: r.status, body: await r.json() }), (e) => ({ error: String(e) }))`;
+
+        // from a page on the listed website (another origin than the CRM's): the preflight passes and the page can read the answer
+        await page.goto(`${site}/login`);
+        expect((await page.evaluate(js`location.origin`)) === site, `the page did not open on ${site}`);
+        const accepted = await page.evaluate(post(address, 'Browser Check Visitor'));
+        expect(accepted.status === 202 && accepted.body?.data?.status === 'accepted', `a post from the listed website was not accepted or could not be read: ${JSON.stringify(accepted)}`);
+
+        // from a page on a site that is not listed (the CRM's own origin posting to the website's name): the browser refuses to hand the answer over
+        await page.goto('/login');
+        const before = page.problems();
+        expect(before.length === 0, `before the refused post the browser had already heard: ${before.join('; ')}`);
+
+        const refused = await page.evaluate(post(address.replace(home, site), 'Browser Check Stranger'));
+        expect(refused.error !== undefined && refused.status === undefined, `a page on an unlisted site was able to read an answer: ${JSON.stringify(refused)}`);
+
+        // …and the errors that refusal makes are the ones expected, no others: the browser's own CORS refusal, the 403 of the preflight, the failed request
+        const heard = page.problems();
+        expect(heard.some((p) => /blocked by CORS policy/.test(p)), `the browser did not report a CORS refusal: ${heard.join('; ')}`);
+        expect(heard.every((p) => /CORS policy|HTTP 403 .*\/api\/webhooks\/website\/|net::ERR_FAILED/.test(p)), `the refused post made unexpected errors: ${heard.join('; ')}`);
+
+        // the visitor from the listed site is a lead; the stranger never was one
+        await page.goto(`/crm/leads?q=${mobile}&stage=all`);
+        const text = await page.evaluate(mainText);
+        expect(text.includes('Browser Check Visitor') && !text.includes('Browser Check Stranger'), 'the leads list does not show only the visitor from the listed site');
     },
 };
 

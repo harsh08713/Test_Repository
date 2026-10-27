@@ -366,6 +366,20 @@ return [
             'type' => 'secret',
             'default' => null,
         ],
+        'integrations.website_allowed_origins' => [
+            'group' => 'Integrations',
+            'label' => 'Websites allowed to send leads from a visitor’s browser',
+            'help' => 'The addresses of your own website, for example https://www.example.com — several may be separated by commas or spaces. A browser on any other site is refused. Leave empty and no browser is allowed (a server posting the form is unaffected).',
+            'type' => 'string',
+            'default' => '',
+        ],
+        'integrations.website_webhook_secret' => [
+            'group' => 'Integrations',
+            'label' => 'Website form signing secret',
+            'help' => 'Only for a form that is posted by your own server or a relay (see docs/integrations.md). A visitor’s browser cannot sign, so while this is set browser forms are refused: leave it empty for a form on a page.',
+            'type' => 'secret',
+            'default' => null,
+        ],
         'integrations.log_retention_days' => [
             'group' => 'Integrations',
             'label' => 'Keep the inbound-lead log for this many days',

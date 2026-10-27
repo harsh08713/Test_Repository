@@ -38,8 +38,10 @@ final class CampaignAttribution
             return $lead;
         }
 
+        // UTM values with no campaign of their own must not wipe a campaign the lead was already credited to (an inferred one)
         $lead->forceFill([
-            'campaign_id' => $campaign?->getKey(), 'utm' => $clean === [] ? null : $clean, 'attribution' => $campaign === null ? null : $how,
+            'campaign_id' => $campaign === null ? $lead->campaign_id : $campaign->getKey(), 'utm' => $clean === [] ? null : $clean,
+            'attribution' => $campaign === null ? $lead->attribution : $how,
         ])->saveQuietly();
 
         $campaign !== null && $this->credit($campaign->getKey(), $lead);

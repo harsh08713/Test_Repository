@@ -7,10 +7,12 @@ use App\Modules\CRM\Services\SalesTeamService;
 use App\Modules\Integrations\Jobs\PullProviderLeads;
 use App\Modules\Integrations\Models\IntegrationConnection;
 use App\Modules\Integrations\Models\LeadApiLog;
+use App\Modules\Integrations\Providers\BrowserForm;
 use App\Modules\Integrations\Providers\LeadProvider;
 use App\Modules\Integrations\Providers\ProviderRegistry;
 use App\Modules\Integrations\Services\ConnectionService;
 use App\Modules\Integrations\Services\ProviderSync;
+use App\Modules\Integrations\Services\WebsiteOrigins;
 use App\Modules\Shared\Models\Location;
 use App\Modules\Shared\Services\SettingsService;
 use App\Modules\Shared\Tenancy\TenantContext;
@@ -164,7 +166,7 @@ class IntegrationList extends Component
         return $user;
     }
 
-    public function render(ProviderRegistry $providers, SettingsService $settings, SalesTeamService $teams): View
+    public function render(ProviderRegistry $providers, SettingsService $settings, SalesTeamService $teams, WebsiteOrigins $origins): View
     {
         $user = $this->actor();
         $companyId = (int) app(TenantContext::class)->activeCompanyId();
@@ -181,8 +183,10 @@ class IntegrationList extends Component
             'connection' => $connections->get($key),
             'counts' => $counts->get($key, []),
             'today' => (int) ($today[$key] ?? 0),
-            'apiKeySet' => $settings->isSet("integrations.{$key}_api_key", $companyId),
+            'apiKeySet' => $provider->canPull() && $settings->isSet("integrations.{$key}_api_key", $companyId),
             'signed' => $settings->isSet("integrations.{$key}_webhook_secret", $companyId),
+            'origins' => $provider instanceof BrowserForm ? $origins->allowed($companyId) : [],
+            'snippet' => $provider instanceof BrowserForm && $canEdit && $connections->has($key) ? $provider->snippet($connections->get($key)->webhookUrl()) : null,
         ])->filter(fn (array $row) => $row['connection'] !== null)->values();
 
         $branchId = (string) ($this->form['default_location_id'] ?? '');
