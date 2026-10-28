@@ -69,6 +69,36 @@
         </dl>
     </section>
 
+    @if ($dealForecast)
+        <section class="card" aria-labelledby="s-forecast" id="forecast">
+            <div class="card-header flex-wrap">
+                <h2 id="s-forecast" class="text-sm font-semibold text-slate-900">Forecast from history <span class="font-normal text-slate-500">(advice)</span></h2>
+                <span class="badge {{ $dealForecast->badge() }}">{{ $dealForecast->confidenceLabel() }}</span>
+            </div>
+            <div class="card-body space-y-3">
+                <dl class="grid gap-x-8 gap-y-3 sm:grid-cols-3">
+                    <div><dt class="text-xs text-slate-500">History says</dt><dd class="text-lg font-semibold tabular-nums text-slate-900">{{ $dealForecast->percent }}%</dd></div>
+                    <div><dt class="text-xs text-slate-500">Your figure</dt><dd class="text-lg font-semibold tabular-nums text-slate-900">{{ $deal->probability }}%</dd></div>
+                    <div><dt class="text-xs text-slate-500">Weighted by history</dt><dd class="text-lg font-semibold tabular-nums text-slate-900">₹ {{ Format::number($dealForecast->weighted, 2) }}</dd></div>
+                </dl>
+                <p class="text-sm text-slate-700">
+                    @if ($dealForecast->samples === 0)
+                        No closed deal has reached {{ $dealForecast->stage->label() }} yet, so this is just the usual {{ $dealForecast->prior }}% for the stage.
+                    @else
+                        Of {{ $dealForecast->samples }} closed {{ $dealForecast->samples === 1 ? 'deal' : 'deals' }} that reached {{ $dealForecast->stage->label() }}, {{ $dealForecast->won }} {{ $dealForecast->won === 1 ? 'was' : 'were' }} won. The figure starts from the usual {{ $dealForecast->prior }}% for the stage and moves towards that result as more deals close.
+                    @endif
+                    @if ($dealForecast->confidence === 'thin')
+                        There is too little history to lean on yet.
+                    @endif
+                </p>
+                @if (abs($dealForecast->percent - $deal->probability) >= 20)
+                    <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">The history-based figure is {{ $dealForecast->percent > $deal->probability ? 'much higher' : 'much lower' }} than yours — worth a second look at this deal.</p>
+                @endif
+                <p class="text-xs text-slate-500">Worked out from this company’s own closed deals, not by an AI. It is shown beside your figure and never replaces it: the deal’s probability, the pipeline totals and the dashboards still use the figure a person set.</p>
+            </div>
+        </section>
+    @endif
+
     <section class="card" aria-labelledby="s-details">
         <div class="card-header"><h2 id="s-details" class="text-sm font-semibold text-slate-900">Details</h2></div>
         <dl class="card-body grid gap-x-8 gap-y-3 sm:grid-cols-3">

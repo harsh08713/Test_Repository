@@ -106,7 +106,7 @@ export class Browser {
 }
 
 export class Page {
-    #browser; #session; #context; #origin; #problems = []; #waiters = [];
+    #browser; #session; #context; #origin; #problems = []; #waiters = []; #workers = new Map();
 
     constructor(browser, session, context, origin) {
         this.#browser = browser; this.#session = session; this.#context = context; this.#origin = origin;
@@ -166,8 +166,37 @@ export class Page {
         });
     }
 
-    async viewport(width, height) {
-        await this.#send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
+    /**
+     * The window size. With `touch`, the device also behaves like a phone or tablet: a finger instead of a mouse (the `pointer: coarse` and
+     * `hover: none` media features), so what the CSS keeps for touch screens, or hides until a hover, is what the page shows.
+     */
+    async viewport(width, height, touch = false) {
+        await this.#send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 || touch });
+        await this.#send('Emulation.setTouchEmulationEnabled', touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+    }
+
+    /**
+     * Cut the network (or give it back) for the page *and* for its service workers: a worker's requests are not the page's, so
+     * switching the page off alone would leave a worker free to fetch.
+     */
+    async offline(on) {
+        const conditions = { offline: on, latency: 0, downloadThroughput: -1, uploadThroughput: -1 };
+        await this.#send('Network.emulateNetworkConditions', conditions);
+
+        const { targetInfos } = await this.#browser.send('Target.getTargets');
+
+        for (const target of targetInfos.filter((t) => t.type === 'service_worker' && t.browserContextId === this.#context)) {
+            // One session per worker, kept: an override belongs to the session that set it, so a second session could not undo the first one's.
+            let sessionId = this.#workers.get(target.targetId);
+
+            if (!sessionId) {
+                ({ sessionId } = await this.#browser.send('Target.attachToTarget', { targetId: target.targetId, flatten: true }));
+                this.#workers.set(target.targetId, sessionId);
+                await this.#browser.send('Network.enable', {}, sessionId);
+            }
+
+            await this.#browser.send('Network.emulateNetworkConditions', conditions, sessionId);
+        }
     }
 
     /** The position the device will report to the page. */

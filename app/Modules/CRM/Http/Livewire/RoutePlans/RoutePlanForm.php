@@ -7,7 +7,9 @@ use App\Modules\CRM\Exceptions\FieldRuleException;
 use App\Modules\CRM\Http\Livewire\Concerns\ScopesToPeople;
 use App\Modules\CRM\Models\RoutePlan;
 use App\Modules\CRM\Services\RoutePlanService;
+use App\Modules\CRM\Services\RouteSuggestion;
 use App\Modules\CRM\Services\SalesScope;
+use App\Modules\CRM\Support\GeoMath;
 use App\Modules\Masters\Enums\LedgerType;
 use App\Modules\Masters\Models\Block;
 use App\Modules\Masters\Models\Ledger;
@@ -145,6 +147,110 @@ class RoutePlanForm extends Component
         }
     }
 
+    /**
+     * What the last "Suggest an order" worked out (empty until it is asked, and ignored once the stops have changed since): the stops' keys in the suggested order,
+     * the distances, anything it could not place, and the stops whose visit window the order would put out of sequence. It is advice; nothing is saved.
+     *
+     * @var array<string, mixed>
+     */
+    #[Locked]
+    public array $suggestion = [];
+
+    /** Ask for an advisory order of the stops that have a place on the map. Straight-line distances, from the branch when it has coordinates. */
+    public function suggestOrder(RouteSuggestion $suggester): void
+    {
+        $branch = ctype_digit((string) ($this->plan['location_id'] ?? '')) ? Location::query()->find((int) $this->plan['location_id']) : null;
+        $start = $branch !== null && $branch->latitude !== null && $branch->longitude !== null ? ['lat' => (float) $branch->latitude, 'lng' => (float) $branch->longitude] : null;
+
+        $result = $suggester->suggest($this->suggestionInput(), $start);
+
+        $this->suggestion = [...$result, 'hash' => $this->stopsHash()];
+    }
+
+    /** Reorder the stops as suggested — only if they are still the stops it was worked out for. */
+    public function applySuggestion(): void
+    {
+        $order = $this->suggestion['order'] ?? null;
+
+        if (! is_array($order) || ($this->suggestion['hash'] ?? null) !== $this->stopsHash()) {
+            $this->suggestion = [];
+            $this->addError('suggestion', 'The stops have changed since the order was suggested. Ask again.');
+
+            return;
+        }
+
+        $byKey = [];
+        foreach ($this->stops as $stop) {
+            $byKey[$stop['key']] = $stop;
+        }
+
+        $wanted = array_keys($byKey);
+        $given = array_map('strval', $order);
+        sort($wanted);
+        sort($given);
+
+        // every stop exactly once: never lose or double a stop because of what a suggestion says
+        if ($wanted !== $given) {
+            $this->suggestion = [];
+            $this->addError('suggestion', 'The stops have changed since the order was suggested. Ask again.');
+
+            return;
+        }
+
+        $this->stops = array_values(array_map(fn (string $key) => $byKey[$key], array_map('strval', $order)));
+        $this->suggestion = [];
+    }
+
+    public function dismissSuggestion(): void
+    {
+        $this->suggestion = [];
+        $this->resetErrorBag('suggestion');
+    }
+
+    /** @return list<array{key: string, lat: float|null, lng: float|null, from: string|null}> */
+    private function suggestionInput(): array
+    {
+        return array_map(fn (array $stop) => [
+            'key' => (string) $stop['key'], 'lat' => GeoMath::number($stop['latitude'] ?? null), 'lng' => GeoMath::number($stop['longitude'] ?? null),
+            'from' => ($stop['visit_from'] ?? '') === '' ? null : (string) $stop['visit_from'],
+        ], $this->stops);
+    }
+
+    /**
+     * What the suggestion panel shows, or null when nothing was asked or the stops have changed since (a stale suggestion is not shown, let alone applied).
+     *
+     * @return array{rows: list<array{position: int, label: string, now: int}>, saved_km: string, current_km: string, distance_km: string, changed: bool, start: string, unplaced: list<string>, clashes: list<string>}|null
+     */
+    private function advice(): ?array
+    {
+        if ($this->suggestion === [] || ($this->suggestion['hash'] ?? null) !== $this->stopsHash()) {
+            return null;
+        }
+
+        $label = [];
+        $now = [];
+        foreach ($this->stops as $i => $stop) {
+            $label[$stop['key']] = trim((string) ($stop['label'] ?? '')) !== '' ? trim((string) $stop['label']) : 'Stop '.($i + 1);
+            $now[$stop['key']] = $i + 1;
+        }
+
+        $km = fn (mixed $metres): string => number_format(((float) $metres) / 1000, 1);
+
+        return [
+            'rows' => array_map(fn (string $key, int $i) => ['position' => $i + 1, 'label' => $label[$key] ?? $key, 'now' => $now[$key] ?? 0], (array) $this->suggestion['order'], array_keys((array) $this->suggestion['order'])),
+            'saved_km' => $km($this->suggestion['saved_m'] ?? 0), 'current_km' => $km($this->suggestion['current_m'] ?? 0), 'distance_km' => $km($this->suggestion['distance_m'] ?? 0),
+            'changed' => (bool) ($this->suggestion['changed'] ?? false), 'start' => (string) ($this->suggestion['start'] ?? ''),
+            'unplaced' => array_map(fn (string $key) => $label[$key] ?? $key, (array) ($this->suggestion['unplaced'] ?? [])),
+            'clashes' => array_map(fn (string $key) => $label[$key] ?? $key, (array) ($this->suggestion['clashes'] ?? [])),
+        ];
+    }
+
+    /** A fingerprint of what a suggestion depends on: which stops, where they are and their windows — not their wording. */
+    private function stopsHash(): string
+    {
+        return hash('sha256', (string) json_encode([$this->suggestionInput(), $this->plan['location_id'] ?? '']));
+    }
+
     public function save(RoutePlanService $service): void
     {
         $user = $this->actor();
@@ -192,6 +298,7 @@ class RoutePlanForm extends Component
         }
 
         return view('crm.plans.form', [
+            'advice' => $this->advice(),
             'editing' => $this->planId !== null,
             'people' => $people,
             'branches' => Location::query()->where(fn ($q) => $q->where('status', 'active')->orWhere('id', is_numeric($this->plan['location_id'] ?? null) ? (int) $this->plan['location_id'] : 0))->orderBy('name')->pluck('name', 'id')->all(),

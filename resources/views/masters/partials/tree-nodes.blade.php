@@ -6,9 +6,9 @@
     @endphp
     <li wire:key="node-{{ $model->getKey() }}" role="treeitem" aria-expanded="true"
         x-data="{ open: true }" x-on:tree-expand.window="open = true" x-on:tree-collapse.window="open = false">
-        <div class="group flex items-center gap-2 py-1.5 pr-4 hover:bg-slate-50" style="padding-left: {{ 1 + $node['depth'] * 1.5 }}rem">
+        <div class="group flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5 pr-4 hover:bg-slate-50" style="padding-left: {{ 1 + $node['depth'] * 1.5 }}rem">
             <button type="button" x-on:click="open = ! open" @disabled(! $hasChildren)
-                    class="flex size-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 disabled:opacity-0"
+                    class="flex size-7 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 disabled:opacity-0 pointer-coarse:size-9"
                     x-bind:aria-label="open ? 'Collapse' : 'Expand'">
                 <svg class="size-3.5 transition" x-bind:class="open ? 'rotate-90' : ''" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 4l6 6-6 6V4z" /></svg>
             </button>
@@ -26,7 +26,8 @@
                 <span class="badge bg-amber-100 text-amber-800">Inactive</span>
             @endif
 
-            <span class="ml-auto flex shrink-0 gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
+            {{-- Shown on hover only where there is a mouse (pointer-fine); a finger cannot hover, so on a phone or a touch tablet the actions are always there, on a line of their own when the name is long. --}}
+            <span class="ml-auto flex shrink-0 flex-wrap justify-end gap-1 transition pointer-fine:opacity-0 pointer-fine:group-focus-within:opacity-100 pointer-fine:group-hover:opacity-100">
                 @can('create', $model)
                     <button type="button" wire:click="create({{ $model->getKey() }})" class="btn-ghost btn-sm">Add child</button>
                 @endcan

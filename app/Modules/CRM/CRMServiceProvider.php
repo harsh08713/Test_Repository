@@ -23,6 +23,8 @@ use App\Modules\CRM\Models\RouteStop;
 use App\Modules\CRM\Models\SalesTarget;
 use App\Modules\CRM\Models\SalesTeam;
 use App\Modules\CRM\Models\SalesTeamMember;
+use App\Modules\CRM\Models\Territory;
+use App\Modules\CRM\Models\TerritoryArea;
 use App\Modules\CRM\Support\NullAchievementSource;
 use App\Modules\Shared\Imports\ImporterRegistry;
 use Illuminate\Console\Scheduling\Schedule;
@@ -47,6 +49,8 @@ class CRMServiceProvider extends ServiceProvider
             'sales_target' => SalesTarget::class,
             'route_plan' => RoutePlan::class,
             'route_stop' => RouteStop::class,
+            'territory' => Territory::class,
+            'territory_area' => TerritoryArea::class,
             'attendance' => AttendanceRecord::class,
             'geofence_violation' => GeofenceViolation::class,
             'lead_source' => LeadSource::class,

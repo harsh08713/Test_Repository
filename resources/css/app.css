@@ -92,6 +92,36 @@
         outline-offset: 2px;
     }
 
+    /* Touch: no 300 ms wait or double-tap zoom on a control, and no grey flash over what was pressed. */
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    label,
+    summary {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /*
+     * iPhone Safari zooms the whole page when a field smaller than 16px takes focus, and does not zoom back. On a phone the fields
+     * are therefore 16px; the desktop's compact 13px stays where a mouse is used.
+     */
+    @media (max-width: 767px) {
+        input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+        select,
+        textarea {
+            font-size: 16px;
+        }
+    }
+
+    /* A phone with a notch, or the app in a window of its own: keep content out from under the cut-outs (viewport-fit=cover). */
+    body {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+
     @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -157,7 +187,7 @@
 }
 
 @utility card-header {
-    @apply flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-50 px-5 py-3;
+    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-300 bg-slate-50 px-5 py-3;
 }
 
 @utility card-body {
@@ -253,6 +283,39 @@
     }
     .data-table tbody tr {
         @apply border-t border-slate-200 even:bg-slate-50/50 hover:bg-brand-50;
+    }
+}
+
+/* Touch screens only: buttons and fields tall enough for a finger. Dense row actions (btn-sm) stay compact at 30 px; a mouse keeps the compact sizes everywhere. */
+@media (pointer: coarse) {
+    :is(.btn, .btn-primary, .btn-secondary, .btn-danger, .btn-ghost):not(.btn-sm) {
+        min-height: 2.75rem;
+    }
+
+    .btn-sm {
+        min-height: 2rem;
+    }
+
+    .input {
+        min-height: 2.75rem;
+    }
+}
+
+/*
+ * Small text buttons ("Remove", "Edit", "History": the views write them as `text-xs … hover:underline`) are about 15 px tall, too small
+ * for a finger. On a phone, a tablet or any touch screen they get a 30 px-high target and keep their look: the padding is cancelled
+ * by an equal negative margin, so the text does not move. A mouse on a wide window keeps the compact size. Links are not covered
+ * here (an inline link inside a sentence is exempt, and a link that is a layout item is padded where it is written).
+ */
+@media (pointer: coarse), (max-width: 1023px) {
+    button[class*='hover:underline'] {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2rem;
+        min-width: 2rem;
+        justify-content: center;
+        padding-inline: 0.5rem;
+        margin-inline: -0.5rem;
     }
 }
 

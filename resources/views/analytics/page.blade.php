@@ -30,7 +30,7 @@
             <div class="card-header flex justify-end">
                 <div class="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs" role="group" aria-label="Group by">
                     @foreach (['day' => 'Daily', 'week' => 'Weekly', 'month' => 'Monthly'] as $g => $name)
-                        <button type="button" wire:click="$set('grain', '{{ $g }}')" @class(['rounded-md px-2.5 py-1 font-medium', 'bg-brand-600 text-white' => $t['granularity'] === $g, 'text-slate-600 hover:bg-slate-100' => $t['granularity'] !== $g])>{{ $name }}</button>
+                        <button type="button" wire:click="$set('grain', '{{ $g }}')" @class(['rounded-md px-3 py-1.5 font-medium', 'bg-brand-600 text-white' => $t['granularity'] === $g, 'text-slate-600 hover:bg-slate-100' => $t['granularity'] !== $g])>{{ $name }}</button>
                     @endforeach
                 </div>
             </div>

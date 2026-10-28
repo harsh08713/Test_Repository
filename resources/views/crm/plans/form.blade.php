@@ -55,10 +55,39 @@
         <section class="card" aria-labelledby="sec-stops">
             <div class="card-header">
                 <h2 id="sec-stops" class="text-sm font-semibold text-slate-900">Stops, in order</h2>
-                @if (count($stops) < $max)<button type="button" wire:click="addStop" class="btn-secondary btn-sm">Add a stop</button>@endif
+                <div class="flex flex-wrap gap-2">
+                    @if (count($stops) > 1)<button type="button" wire:click="suggestOrder" wire:loading.attr="disabled" class="btn-secondary btn-sm">Suggest an order</button>@endif
+                    @if (count($stops) < $max)<button type="button" wire:click="addStop" class="btn-secondary btn-sm">Add a stop</button>@endif
+                </div>
             </div>
             <div class="card-body space-y-4">
                 @error('stops') <p class="error">{{ $message }}</p> @enderror
+                @error('suggestion') <p class="error" role="alert">{{ $message }}</p> @enderror
+
+                @if ($advice)
+                    <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status" aria-label="Suggested order" wire:key="advice">
+                        @if ($advice['changed'])
+                            <p><strong>A shorter order is possible:</strong> {{ $advice['distance_km'] }} km instead of {{ $advice['current_km'] }} km (about {{ $advice['saved_km'] }} km less), measured in straight lines from {{ $advice['start'] === 'branch' ? 'the branch' : 'your first stop' }}. Roads, traffic and visit times are not known to it, so treat it as a starting point.</p>
+                            <ol class="mt-2 list-decimal space-y-0.5 pl-5">
+                                @foreach ($advice['rows'] as $row)
+                                    <li wire:key="adv-{{ $row['position'] }}">{{ $row['label'] }} <span class="text-xs text-sky-700">(now stop {{ $row['now'] }})</span></li>
+                                @endforeach
+                            </ol>
+                        @else
+                            <p><strong>Your order is already the shortest it can find</strong> ({{ $advice['current_km'] }} km in straight lines from {{ $advice['start'] === 'branch' ? 'the branch' : 'your first stop' }}).</p>
+                        @endif
+                        @if ($advice['unplaced'])
+                            <p class="mt-2">Without a place on the map, so left where you put {{ count($advice['unplaced']) === 1 ? 'it' : 'them' }}: {{ implode(', ', $advice['unplaced']) }}.</p>
+                        @endif
+                        @if ($advice['changed'] && $advice['clashes'])
+                            <p class="mt-2 text-amber-800">This order would visit {{ implode(', ', $advice['clashes']) }} after a stop whose visit window starts later — check the visit times before using it.</p>
+                        @endif
+                        <div class="mt-3 flex gap-2">
+                            @if ($advice['changed'])<button type="button" wire:click="applySuggestion" class="btn-primary btn-sm">Use this order</button>@endif
+                            <button type="button" wire:click="dismissSuggestion" class="btn-secondary btn-sm">{{ $advice['changed'] ? 'Keep mine' : 'Close' }}</button>
+                        </div>
+                    </div>
+                @endif
 
                 @forelse ($stops as $i => $stop)
                     <div class="rounded-lg border border-slate-200 p-4" wire:key="stop-{{ $stop['key'] ?? $i }}">

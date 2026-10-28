@@ -144,6 +144,11 @@ switch a team off, or edit a target, instead).
 | `geofence.max_accuracy_m` | 150 | a reading less accurate than this is refused |
 | `geofence.manager_override` | off | whether a manager may accept a refused attempt |
 
+## Territories and route suggestions
+
+A **territory** (Field sales → Territories) is a named part of the map — states, districts, blocks, PIN codes, customers — with an owner; the most specific cover wins and a place belongs to one territory. On a plan's
+form, **Suggest an order** offers a shorter order of the stops that have a place on the map (straight-line distances, never longer than the planner's, visit windows warned about, nothing saved by asking). Both are advice. Details: [territories.md](territories.md).
+
 ## Known limits
 
 * Attendance is a single check-in per day; there is no check-out and no per-stop visit confirmation yet (stops carry a

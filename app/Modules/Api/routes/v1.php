@@ -11,6 +11,7 @@ use App\Modules\Api\Http\Controllers\LookupController;
 use App\Modules\Api\Http\Controllers\ProfileController;
 use App\Modules\Api\Http\Controllers\QuotationController;
 use App\Modules\Api\Http\Controllers\RoutePlanController;
+use App\Modules\Api\Http\Controllers\SyncController;
 use App\Modules\Api\Http\Middleware\AssignRequestId;
 use App\Modules\Api\Http\Middleware\LogApiRequest;
 use App\Modules\Api\Http\Middleware\RequireReadableJson;
@@ -41,6 +42,9 @@ Route::prefix('api/v1')->name('api.v1.')->middleware(['api', AssignRequestId::cl
 
         Route::get('devices', [DeviceController::class, 'index'])->name('devices.index');
         Route::delete('devices/{device}', [DeviceController::class, 'destroy'])->whereNumber('device')->name('devices.destroy');
+
+        // An offline app's queue, run in order through the real endpoints below (SyncRunner): each change keeps every rule and its own Idempotency-Key.
+        Route::post('sync', SyncController::class)->name('sync');
 
         Route::get('route-plan/today', [RoutePlanController::class, 'today'])->name('route-plan.today');
 

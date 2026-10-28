@@ -47,7 +47,7 @@
             <div class="card-header"><h2 class="text-sm font-semibold text-slate-900">Birthdays in the next {{ $window }} days</h2></div>
             <ul class="divide-y divide-slate-100 text-sm">
                 @forelse ($s['birthdays'] as $b)
-                    <li class="flex justify-between px-4 py-2" wire:key="bd-{{ $b['id'] }}-{{ $b['on'] }}"><a href="{{ route('hr.employees.show', $b['id']) }}" wire:navigate class="text-brand-700 hover:underline">{{ $b['name'] }}</a><span class="text-slate-500">{{ \Illuminate\Support\Carbon::parse($b['on'])->format('d M') }}</span></li>
+                    <li class="flex justify-between px-4 py-2" wire:key="bd-{{ $b['id'] }}-{{ $b['on'] }}"><a href="{{ route('hr.employees.show', $b['id']) }}" wire:navigate class="-my-1.5 py-1.5 text-brand-700 hover:underline">{{ $b['name'] }}</a><span class="text-slate-500">{{ \Illuminate\Support\Carbon::parse($b['on'])->format('d M') }}</span></li>
                 @empty
                     <li class="px-4 py-6 text-center text-slate-500">None.</li>
                 @endforelse
@@ -57,7 +57,7 @@
             <div class="card-header"><h2 class="text-sm font-semibold text-slate-900">Work anniversaries</h2></div>
             <ul class="divide-y divide-slate-100 text-sm">
                 @forelse ($s['anniversaries'] as $a)
-                    <li class="flex justify-between px-4 py-2" wire:key="an-{{ $a['id'] }}-{{ $a['on'] }}"><a href="{{ route('hr.employees.show', $a['id']) }}" wire:navigate class="text-brand-700 hover:underline">{{ $a['name'] }}</a><span class="text-slate-500">{{ $a['years'] }} {{ $a['years'] === 1 ? 'year' : 'years' }} · {{ \Illuminate\Support\Carbon::parse($a['on'])->format('d M') }}</span></li>
+                    <li class="flex justify-between px-4 py-2" wire:key="an-{{ $a['id'] }}-{{ $a['on'] }}"><a href="{{ route('hr.employees.show', $a['id']) }}" wire:navigate class="-my-1.5 py-1.5 text-brand-700 hover:underline">{{ $a['name'] }}</a><span class="text-slate-500">{{ $a['years'] }} {{ $a['years'] === 1 ? 'year' : 'years' }} · {{ \Illuminate\Support\Carbon::parse($a['on'])->format('d M') }}</span></li>
                 @empty
                     <li class="px-4 py-6 text-center text-slate-500">None.</li>
                 @endforelse
@@ -67,7 +67,7 @@
             <div class="card-header"><h2 class="text-sm font-semibold text-slate-900">Probation ending</h2></div>
             <ul class="divide-y divide-slate-100 text-sm">
                 @forelse ($s['probation_ending'] as $p)
-                    <li class="flex justify-between px-4 py-2" wire:key="pr-{{ $p['id'] }}"><a href="{{ route('hr.employees.show', $p['id']) }}" wire:navigate class="text-brand-700 hover:underline">{{ $p['name'] }}</a><span class="text-slate-500">{{ \Illuminate\Support\Carbon::parse($p['on'])->format('d M Y') }}</span></li>
+                    <li class="flex justify-between px-4 py-2" wire:key="pr-{{ $p['id'] }}"><a href="{{ route('hr.employees.show', $p['id']) }}" wire:navigate class="-my-1.5 py-1.5 text-brand-700 hover:underline">{{ $p['name'] }}</a><span class="text-slate-500">{{ \Illuminate\Support\Carbon::parse($p['on'])->format('d M Y') }}</span></li>
                 @empty
                     <li class="px-4 py-6 text-center text-slate-500">Nobody.</li>
                 @endforelse

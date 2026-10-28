@@ -67,7 +67,7 @@
                 <h2 class="text-sm font-semibold text-slate-900">{{ $canSales && $canLoss ? 'Revenue vs loss' : ($canSales ? 'Revenue' : 'Loss') }} trend</h2>
                 <div class="inline-flex rounded-lg border border-slate-200 p-0.5 text-xs" role="group" aria-label="Group by">
                     @foreach (['day' => 'Daily', 'week' => 'Weekly', 'month' => 'Monthly'] as $g => $name)
-                        <button type="button" wire:click="$set('grain', '{{ $g }}')" @class(['rounded-md px-2.5 py-1 font-medium', 'bg-brand-600 text-white' => $trend['granularity'] === $g, 'text-slate-600 hover:bg-slate-100' => $trend['granularity'] !== $g])>{{ $name }}</button>
+                        <button type="button" wire:click="$set('grain', '{{ $g }}')" @class(['rounded-md px-3 py-1.5 font-medium', 'bg-brand-600 text-white' => $trend['granularity'] === $g, 'text-slate-600 hover:bg-slate-100' => $trend['granularity'] !== $g])>{{ $name }}</button>
                     @endforeach
                 </div>
             </div>
@@ -95,7 +95,7 @@
                 <div class="card" wire:key="donut-{{ $slug }}">
                     <div class="card-header flex items-center justify-between">
                         <h2 class="text-sm font-semibold text-slate-900">{{ $title }}</h2>
-                        <a href="{{ route('analytics.page', ['page' => $slug] + $query) }}" wire:navigate class="text-xs font-medium text-brand-600 hover:underline">Details</a>
+                        <a href="{{ route('analytics.page', ['page' => $slug] + $query) }}" wire:navigate class="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline">Details</a>
                     </div>
                     <div class="card-body">
                         @if ($rows === [])
@@ -125,7 +125,7 @@
             <div class="card">
                 <div class="card-header flex items-center justify-between">
                     <h2 class="text-sm font-semibold text-slate-900">Top products by revenue</h2>
-                    <a href="{{ route('analytics.page', ['page' => 'top-products'] + $query) }}" wire:navigate class="text-xs font-medium text-brand-600 hover:underline">Details</a>
+                    <a href="{{ route('analytics.page', ['page' => 'top-products'] + $query) }}" wire:navigate class="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline">Details</a>
                 </div>
                 <div class="card-body">
                     @if ($products === [])
@@ -140,7 +140,7 @@
             <div class="card">
                 <div class="card-header flex items-center justify-between">
                     <h2 class="text-sm font-semibold text-slate-900">Top loss categories</h2>
-                    <a href="{{ route('analytics.page', ['page' => 'loss-categories'] + $query) }}" wire:navigate class="text-xs font-medium text-brand-600 hover:underline">Details</a>
+                    <a href="{{ route('analytics.page', ['page' => 'loss-categories'] + $query) }}" wire:navigate class="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline">Details</a>
                 </div>
                 <div class="card-body">
                     @if ($categories === [])
@@ -195,7 +195,7 @@
     <div class="card">
         <div class="card-header flex items-center justify-between">
             <h2 class="text-sm font-semibold text-slate-900">Industry performance overview</h2>
-            @can('industry_template.view')<a href="{{ route('industries.index') }}" wire:navigate class="text-xs font-medium text-brand-600 hover:underline">View all industries</a>@endcan
+            @can('industry_template.view')<a href="{{ route('industries.index') }}" wire:navigate class="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline">View all industries</a>@endcan
         </div>
         <div class="card-body grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             @foreach ($industries as $row)
@@ -222,7 +222,7 @@
             <div class="card lg:col-span-2">
                 <div class="card-header flex items-center justify-between">
                     <h2 class="text-sm font-semibold text-slate-900">Latest loss incidents</h2>
-                    <a href="{{ route('loss.incidents.index') }}" wire:navigate class="text-xs font-medium text-brand-600 hover:underline">All incidents</a>
+                    <a href="{{ route('loss.incidents.index') }}" wire:navigate class="-my-2 py-2 text-xs font-medium text-brand-600 hover:underline">All incidents</a>
                 </div>
                 <div class="table-wrap">
                     <table class="data-table">

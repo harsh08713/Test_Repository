@@ -218,6 +218,13 @@ planned one be dragged to another time. **Hand-overs**, one lead or many, are al
 permanent ownership history. **Import from Excel** accepts a file with its own headings (map the columns on screen), imports
 the valid rows, reports the rest row by row, and skips numbers that are already leads. See [docs/leads.md](docs/leads.md).
 
+**Phones, tablets and the installable app (Phase 17, first slice)** — every screen fits a phone (drawer menu, tables as one card per row,
+16 px fields), a tablet and a desktop; touch screens get bigger buttons and a hover-only control is always shown without a mouse. The
+app can be **installed** (account menu → *Install app*; on iPhone, Share → Add to Home Screen) and opens in its own window; it needs
+**HTTPS** (or `localhost`). Offline it says so and shows an offline page — it keeps only its own build files and icons, **never a page
+of data**, and **nothing can be saved offline yet** (the next slice). `node tests/Browser/responsive.mjs` checks every page at 375 /
+768 / 1024 px; `npm run test:browser` (*installable app*) checks the worker. See [docs/pwa.md](docs/pwa.md).
+
 **Mobile API (Phase 8)** — `/api/v1`, for the field app (the PWA first). A device signs in with e-mail and password and gets a
 revocable **Sanctum token** (14 days; listed per person; signing out, a password change or deactivation removes it). Only
 accounts holding the `api.access` permission may sign in. The app sends a position and what the person typed; the **server**

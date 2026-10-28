@@ -8,6 +8,7 @@ use App\Modules\CRM\Http\Livewire\Concerns\ScopesToPeople;
 use App\Modules\CRM\Models\Deal;
 use App\Modules\CRM\Models\Followup;
 use App\Modules\CRM\Models\LostReason;
+use App\Modules\CRM\Services\DealForecaster;
 use App\Modules\CRM\Services\DealService;
 use App\Modules\CRM\Services\SalesScope;
 use App\Modules\CRM\Services\SalesTeamService;
@@ -268,6 +269,7 @@ class DealShow extends Component
 
         return view('crm.deals.show', [
             'deal' => $deal,
+            'dealForecast' => app(DealForecaster::class)->forecast($deal),
             'lead' => $lead,
             'canViewLead' => $lead !== null && Gate::allows('view', $lead),
             'canViewCustomer' => $deal->customer !== null && Gate::allows('view', $deal->customer),

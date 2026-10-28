@@ -192,7 +192,7 @@
 
     @if ($data['campaigns'])
         <section class="card" aria-labelledby="sec-campaign">
-            <div class="card-header"><h3 id="sec-campaign" class="text-sm font-semibold text-slate-900">Campaign attribution <span class="badge bg-emerald-100 text-emerald-800">Actual</span></h3><a href="{{ route('marketing.campaigns.index') }}" wire:navigate class="text-xs text-brand-700 hover:underline">All campaigns</a></div>
+            <div class="card-header"><h3 id="sec-campaign" class="text-sm font-semibold text-slate-900">Campaign attribution <span class="badge bg-emerald-100 text-emerald-800">Actual</span></h3><a href="{{ route('marketing.campaigns.index') }}" wire:navigate class="-my-2 py-2 text-xs text-brand-700 hover:underline">All campaigns</a></div>
             <div class="table-wrap">
                 <table class="data-table">
                     <thead><tr><th>Campaign</th><th class="text-right">People</th><th class="text-right">Responded</th><th class="text-right">Leads</th><th class="text-right">Orders</th><th class="text-right">Approved sales, net (₹)</th><th class="text-right">Budget (₹)</th></tr></thead>

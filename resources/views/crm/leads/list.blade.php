@@ -37,20 +37,25 @@
     </nav>
 
     <div class="card">
+        @php
+            $activeFilters = collect([$owner, $due, $type, $source, $branch, $from, $to])->filter(fn ($value) => $value !== '' && $value !== null)->count();
+        @endphp
         <div class="card-header flex-wrap">
-            <div class="flex flex-1 flex-wrap items-center gap-3">
-                <label for="l-search" class="sr-only">Search</label>
-                <input id="l-search" type="search" wire:model.live.debounce.300ms="search" placeholder="Name, number, mobile, city…" class="input max-w-xs">
+            <x-filters :active="$activeFilters" id="lead-filters">
+                <x-slot:primary>
+                    <label for="l-search" class="sr-only">Search</label>
+                    <input id="l-search" type="search" wire:model.live.debounce.300ms="search" placeholder="Name, number, mobile, city…" class="input min-w-0 flex-1 sm:max-w-xs sm:flex-none">
+                </x-slot:primary>
 
                 <label for="l-owner" class="sr-only">Owner</label>
-                <select id="l-owner" wire:model.live="owner" class="input w-48">
+                <select id="l-owner" wire:model.live="owner" class="input w-full sm:w-48">
                     <option value="">Any owner</option>
                     @if ($showPool)<option value="none">Unassigned</option>@endif
                     @foreach ($people as $id => $name)<option value="{{ $id }}">{{ $name }}</option>@endforeach
                 </select>
 
                 <label for="l-due" class="sr-only">Next follow-up</label>
-                <select id="l-due" wire:model.live="due" class="input w-48">
+                <select id="l-due" wire:model.live="due" class="input w-full sm:w-48">
                     <option value="">Any follow-up</option>
                     <option value="overdue">Follow-up overdue</option>
                     <option value="today">Follow-up today</option>
@@ -59,29 +64,31 @@
                 </select>
 
                 <label for="l-type" class="sr-only">Kind</label>
-                <select id="l-type" wire:model.live="type" class="input w-44">
+                <select id="l-type" wire:model.live="type" class="input w-full sm:w-44">
                     <option value="">New leads and customers</option>
                     <option value="new">New leads only</option>
                     <option value="existing">Existing customers only</option>
                 </select>
 
                 <label for="l-source" class="sr-only">Source</label>
-                <select id="l-source" wire:model.live="source" class="input w-44">
+                <select id="l-source" wire:model.live="source" class="input w-full sm:w-44">
                     <option value="">All sources</option>
                     @foreach ($sources as $id => $name)<option value="{{ $id }}">{{ $name }}</option>@endforeach
                 </select>
 
                 <label for="l-branch" class="sr-only">Branch</label>
-                <select id="l-branch" wire:model.live="branch" class="input w-44">
+                <select id="l-branch" wire:model.live="branch" class="input w-full sm:w-44">
                     <option value="">All branches</option>
                     @foreach ($branches as $id => $name)<option value="{{ $id }}">{{ $name }}</option>@endforeach
                 </select>
 
-                <label for="l-from" class="text-sm text-slate-600">Lead date</label>
-                <input id="l-from" type="date" wire:model.live="from" class="input w-40" aria-label="Lead date from">
-                <label for="l-to" class="text-sm text-slate-600">to</label>
-                <input id="l-to" type="date" wire:model.live="to" class="input w-40" aria-label="Lead date to">
-            </div>
+                <div class="col-span-2 flex flex-wrap items-center gap-2 sm:contents">
+                    <label for="l-from" class="text-sm text-slate-600">Lead date</label>
+                    <input id="l-from" type="date" wire:model.live="from" class="input min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label="Lead date from">
+                    <label for="l-to" class="text-sm text-slate-600">to</label>
+                    <input id="l-to" type="date" wire:model.live="to" class="input min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label="Lead date to">
+                </div>
+            </x-filters>
         </div>
 
         @if ($canTransfer)

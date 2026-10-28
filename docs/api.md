@@ -210,7 +210,14 @@ first**, paged:
 
 **Conflicts.** Send `expected_updated_at` (the `updated_at` you loaded) on a change; a `409 version_conflict` returns the current lead
 in `details.current` for the person to look at. Without it the last change wins, field by field (only the fields sent change). Any
-change to the lead counts, including a follow-up planned on it. A full offline-conflict policy for the PWA is Phase 17.
+change to the lead counts, including a follow-up planned on it. The conflict policy for an offline app — what the server does and what the person
+is offered, change by change — is in [offline-sync.md](offline-sync.md).
+
+**A whole queue at once — `POST /sync`.** An offline app can send up to 25 queued changes in one call (`{"operations": [{"id", "method", "path", "body", "ref"}]}`),
+each run in order **through the real endpoint it names** (same token, company, throttle, validation, permissions, geofence, approval rules), with the operation's `id` as its
+`Idempotency-Key`. `@name` in a path is the id of the record an earlier operation (with `ref: "name"`) made. The call answers 200 with an entry per operation —
+`applied`, `replayed`, `conflict`, `rejected`, `retry`, `failed` or `skipped` — and a count of each; only a change that takes an Idempotency-Key can be queued
+(`not_syncable` otherwise). The contract, every status and what the app does with it: [offline-sync.md](offline-sync.md).
 
 ## 8. Retrying safely — `Idempotency-Key`
 
@@ -243,4 +250,6 @@ reported, how far it was from the stop, the accuracy and the server's time.
   or ask for the rule to be extended.
 * **Existing installations** keep their edited permission matrix: grant `api.access` to the roles that should sign in (a fresh
   `migrate:fresh --seed` already does).
+* **The offline app's queue.** `POST /sync` is built and tested ([offline-sync.md](offline-sync.md)); the client that stores and sends a queue, and shows pending, conflict and failed
+  states, is not (the installable app saves nothing offline yet).
 * **Live verification** of a native/PWA client is pending until one exists; the contract is covered by the server-side tests.

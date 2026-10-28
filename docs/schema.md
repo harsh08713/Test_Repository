@@ -1166,3 +1166,8 @@ erDiagram
 * `job_openings`, `candidates` (unique mobile per company), `applications` (unique candidate + opening; `hired_employee_id` unique), `application_events` (append-only), `interviews`, `offers` (one per application).
 * `review_cycles`, `performance_goals`, `performance_reviews` (unique employee + cycle).
 * `training_programs`, `training_enrolments` (unique program + employee).
+
+## Phase 17 (territories) additions
+
+* `territories` (plain master: `code` unique per company, `name`, optional branch `location_id`, optional `owner_user_id`, `status`).
+* `territory_areas` (what a territory covers: `kind` = state / district / block / pin_code / customer and exactly one of `state_id`, `district_id`, `block_id`, `pin_code`, `ledger_id` — a check constraint holds that; the virtual `ref` and the unique key `(company_id, kind, ref)` make a unit of the map belong to **one** territory; rows are removed for real, the change is audited on the territory).

@@ -2,8 +2,9 @@
 <html lang="en" class="h-full">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{{ isset($title) ? $title.' · ' : '' }}{{ config('app.name') }}</title>
+    @include('layouts.partials.pwa-head')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-full bg-navy-900 font-sans text-slate-800 antialiased">
@@ -19,5 +20,7 @@
             </div>
         </div>
     </div>
+
+    @include('layouts.partials.pwa-status')
 </body>
 </html>

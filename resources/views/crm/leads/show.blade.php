@@ -16,6 +16,7 @@
         $field('Address', collect([$lead->address_line1, $lead->address_line2, $lead->city])->filter()->implode(', ')),
         $field('Block, district, state', $place),
         $field('PIN code', $lead->pin_code, true),
+        $field('Territory', $territoryNote),
         $field('Expected value', $lead->expected_value !== null ? Format::inr($lead->expected_value) : null),
         $field('Branch', $lead->location?->name),
         $field('Team', $lead->team?->name),
@@ -114,6 +115,52 @@
             @endif
         </dl>
     </section>
+
+    @if ($leadAdvice)
+        <section class="card" aria-labelledby="s-advice" id="advice">
+            <div class="card-header flex-wrap">
+                <h2 id="s-advice" class="text-sm font-semibold text-slate-900">Score and advice</h2>
+                @if ($leadScore->closed)
+                    <span class="badge bg-slate-100 text-slate-600">Closed — not scored</span>
+                @else
+                    <span class="flex items-center gap-2 text-sm"><span class="badge {{ $leadScore->badge() }}">{{ $leadScore->bandLabel() }}</span><span class="font-semibold tabular-nums text-slate-900">{{ $leadScore->score }}</span><span class="text-slate-500">out of 100</span></span>
+                @endif
+            </div>
+            <div class="card-body space-y-4">
+                <p class="text-xs text-slate-500">Worked out from this lead’s own record by fixed rules the company sets (Company settings → Lead scoring) — not by an AI. It is advice: it never moves the lead, changes its owner or sends anything.</p>
+
+                <p class="text-sm text-slate-700">{{ $leadAdvice->summary }}</p>
+
+                @if ($leadAdvice->actions)
+                    <div>
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Worth doing next</h3>
+                        <ul class="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-800">
+                            @foreach ($leadAdvice->actions as $i => $action)<li wire:key="adv-{{ $i }}">{{ $action }}</li>@endforeach
+                        </ul>
+                        @if ($leadAdvice->contactBy)<p class="mt-2 text-sm text-slate-600">Be back in touch by <strong>{{ $leadAdvice->contactBy->format('D j M') }}</strong>.</p>@endif
+                    </div>
+                @endif
+
+                @unless ($leadScore->closed)
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Signal</th><th class="text-right">Points</th><th>Why</th></tr></thead>
+                            <tbody>
+                                @foreach ($leadScore->factors as $factor)
+                                    <tr wire:key="sc-{{ $factor['key'] }}">
+                                        <td>{{ $factor['label'] }}</td>
+                                        <td class="text-right tabular-nums">{{ $factor['points'] }} <span class="text-slate-400">/ {{ $factor['max'] }}</span></td>
+                                        <td class="text-slate-600">{{ $factor['detail'] }}</td>
+                                    </tr>
+                                @endforeach
+                                <tr class="font-semibold"><td>Together</td><td class="text-right tabular-nums">{{ $leadScore->earned }} <span class="font-normal text-slate-400">/ {{ $leadScore->available }}</span></td><td class="text-slate-600">{{ $leadScore->earned }} of {{ $leadScore->available }} points is {{ $leadScore->score }} out of 100</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                @endunless
+            </div>
+        </section>
+    @endif
 
     @if ($lead->interests->isNotEmpty())
         <section class="card" aria-labelledby="s-items">

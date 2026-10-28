@@ -3,6 +3,7 @@
 use App\Modules\Shared\Http\Controllers\ContextController;
 use App\Modules\Shared\Http\Controllers\ImportDownloadController;
 use App\Modules\Shared\Http\Controllers\LogoutController;
+use App\Modules\Shared\Http\Controllers\WebManifestController;
 use App\Modules\Shared\Http\Livewire\ApprovalInbox;
 use App\Modules\Shared\Http\Livewire\Audit;
 use App\Modules\Shared\Http\Livewire\Auth\Login;
@@ -12,6 +13,9 @@ use App\Modules\Shared\Http\Livewire\Settings;
 use App\Modules\Shared\Http\Livewire\SystemHealth;
 use App\Modules\Shared\Http\Livewire\Users;
 use Illuminate\Support\Facades\Route;
+
+// Public: a browser asks for it without a session. See WebManifestController.
+Route::get('/manifest.webmanifest', WebManifestController::class)->name('pwa.manifest');
 
 Route::middleware('guest')->group(function () {
     Route::livewire('/login', Login::class)->name('login');

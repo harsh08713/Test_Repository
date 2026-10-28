@@ -10,13 +10,19 @@ use App\Modules\CRM\Models\Followup;
 use App\Modules\CRM\Models\FollowupOutcome;
 use App\Modules\CRM\Models\Lead;
 use App\Modules\CRM\Models\LostReason;
+use App\Modules\CRM\Models\Territory;
 use App\Modules\CRM\Services\DealService;
 use App\Modules\CRM\Services\FollowupService;
 use App\Modules\CRM\Services\LeadAccess;
+use App\Modules\CRM\Services\LeadAdvisor;
+use App\Modules\CRM\Services\LeadScorer;
 use App\Modules\CRM\Services\LeadService;
 use App\Modules\CRM\Services\LeadTransferService;
 use App\Modules\CRM\Services\SalesScope;
 use App\Modules\CRM\Services\SalesTeamService;
+use App\Modules\CRM\Services\TerritoryResolver;
+use App\Modules\CRM\Support\LeadAdvice;
+use App\Modules\CRM\Support\LeadScore;
 use App\Modules\Sales\Models\Quotation;
 use App\Modules\Sales\Services\QuotationAccess;
 use App\Modules\Shared\Exceptions\ApprovalStateException;
@@ -326,6 +332,41 @@ class LeadShow extends Component
             : $this->redirectRoute($fallback, navigate: false);
     }
 
+    /**
+     * The lead's score, the reasons for it and what is worth doing next — or null when the company has switched this off. Anyone who can open the lead sees it (the
+     * score is made of what is on the page already).
+     *
+     * @return array{leadScore: LeadScore|null, leadAdvice: LeadAdvice|null}
+     */
+    private function leadAdvice(Lead $lead): array
+    {
+        $scorer = app(LeadScorer::class);
+        $config = $scorer->config((int) $lead->company_id);
+
+        if (! $config->enabled) {
+            return ['leadScore' => null, 'leadAdvice' => null];
+        }
+
+        $facts = $scorer->facts($lead);
+        $score = $scorer->score($lead, $facts, $config);
+
+        return ['leadScore' => $score, 'leadAdvice' => app(LeadAdvisor::class)->advise($lead, $score, $facts)];
+    }
+
+    /** Which territory covers this lead and who owns it — advice for whoever hands the lead out; shown only to someone who may see territories. */
+    private function territoryNote(Lead $lead): ?string
+    {
+        if (! Gate::allows('viewAny', Territory::class)) {
+            return null;
+        }
+
+        $match = app(TerritoryResolver::class)->forLead($lead);
+
+        return $match === null
+            ? null
+            : "{$match['territory']->name} — ".($match['territory']->owner->name ?? 'no owner yet')." (by {$match['kind']->label()})";
+    }
+
     public function render(FollowupService $followupService, SalesTeamService $teams, SalesScope $scope, DealService $deals): View
     {
         $lead = $this->leadModel();
@@ -371,6 +412,8 @@ class LeadShow extends Component
             'canQuote' => $deal === null && $lead->isReadyForQuotation() && Gate::allows('create', Quotation::class) && app(LeadAccess::class)->works($actor, $lead),
             'canViewDeal' => $deal !== null && Gate::allows('view', $deal),
             'canViewCustomer' => $lead->customer !== null && Gate::allows('view', $lead->customer),
+            'territoryNote' => $this->territoryNote($lead),
+            ...$this->leadAdvice($lead),
             // the plain moves offered as buttons; Lost and re-opening are dialogs
             'moves' => $canStage && $lead->stage !== LeadStage::Lost ? array_values(array_filter($lead->stage->manualMoves(), fn (LeadStage $s) => $s !== LeadStage::Lost)) : [],
             'reopenStages' => $lead->stage === LeadStage::Lost ? $lead->stage->manualMoves() : [],

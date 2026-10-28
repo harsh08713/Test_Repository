@@ -30,6 +30,7 @@ Permissions are named `{form}.{action}`. A tick means the action exists for that
 | Sales team (`sales_team`) | CRM | ✓ | ✓ | ✓ | ✓ |  |  |  |  | ✓ |  |  |
 | Sales targets (`target`) | CRM | ✓ | ✓ | ✓ | ✓ |  | ✓ |  |  | ✓ |  |  |
 | Route plan (`route_plan`) | CRM | ✓ | ✓ | ✓ | ✓ |  |  | ✓ |  | ✓ |  |  |
+| Territory (`territory`) | CRM | ✓ | ✓ | ✓ | ✓ |  |  |  |  | ✓ |  |  |
 | Attendance (`attendance`) | CRM | ✓ | ✓ | ✓ |  |  | ✓ |  |  |  |  |  |
 | Leads (`lead`) | CRM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |  | ✓ |
 | Follow-ups (`followup`) | CRM | ✓ | ✓ | ✓ | ✓ |  | ✓ |  |  | ✓ |  |  |
@@ -198,6 +199,7 @@ Every permission above, re-synced on each seeder run.
 - `stock`: view, create, export, view_audit
 - `target`: view, create, edit, delete, export, assign
 - `task`: view, create, edit, comment, assign, export, view_audit
+- `territory`: view, create, edit, delete, assign
 - `training`: view, create, edit, enrol_team
 - `unit`: view, create, edit, delete, export, import
 - `user`: view, create, edit, delete, export, assign, view_audit
@@ -320,6 +322,7 @@ Every permission above, re-synced on each seeder run.
 - `staff_attendance`: view, approve
 - `target`: view, create, edit, export, assign
 - `task`: view, create, edit, comment, assign, export
+- `territory`: view, create, edit, assign
 - `training`: view, enrol_team
 - `workflow`: view, create, edit
 
@@ -345,6 +348,7 @@ Every permission above, re-synced on each seeder run.
 - `sales_return`: view
 - `target`: view
 - `task`: view, create, edit, comment
+- `territory`: view
 
 ### Tele-caller
 

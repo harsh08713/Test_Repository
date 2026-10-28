@@ -96,6 +96,9 @@
         @case('bolt')
             <path stroke-linecap="round" stroke-linejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
             @break
+        @case('download')
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            @break
         @default
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6" />
     @endswitch

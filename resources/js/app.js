@@ -1,5 +1,6 @@
 import './bootstrap';
 import './ui';
+import './pwa';
 
 /*
  * The follow-up calendar (FullCalendar). Its code is loaded only on the page that shows it:

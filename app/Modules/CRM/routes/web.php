@@ -9,6 +9,7 @@ use App\Modules\CRM\Http\Livewire\Masters;
 use App\Modules\CRM\Http\Livewire\RoutePlans;
 use App\Modules\CRM\Http\Livewire\Targets;
 use App\Modules\CRM\Http\Livewire\Teams;
+use App\Modules\CRM\Http\Livewire\Territories;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->prefix('crm')->name('crm.')->group(function () {
@@ -43,6 +44,11 @@ Route::middleware('auth')->prefix('field')->name('field.')->group(function () {
     Route::livewire('/teams/create', Teams\SalesTeamForm::class)->name('teams.create');
     Route::livewire('/teams/{team}', Teams\SalesTeamShow::class)->whereNumber('team')->name('teams.show');
     Route::livewire('/teams/{editing}/edit', Teams\SalesTeamForm::class)->whereNumber('editing')->name('teams.edit');
+
+    Route::livewire('/territories', Territories\TerritoryList::class)->name('territories.index');
+    Route::livewire('/territories/create', Territories\TerritoryForm::class)->name('territories.create');
+    Route::livewire('/territories/{territory}', Territories\TerritoryShow::class)->whereNumber('territory')->name('territories.show');
+    Route::livewire('/territories/{editing}/edit', Territories\TerritoryForm::class)->whereNumber('editing')->name('territories.edit');
 
     Route::livewire('/targets', Targets\TargetList::class)->name('targets.index');
     Route::livewire('/targets/create', Targets\TargetForm::class)->name('targets.create');

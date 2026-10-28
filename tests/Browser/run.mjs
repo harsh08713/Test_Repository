@@ -71,7 +71,7 @@ const checks = {
 
         const routes = JSON.parse(execFileSync(php, ['artisan', 'route:list', '--json'], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
         const pages = [...new Set(routes
-            .filter((r) => /^GET/.test(r.method) && !r.uri.includes('{') && r.uri !== '/' && !/^(livewire|up$|storage|_|imports\/|login$|logout$|api\/)/.test(r.uri) && !/lookup$/.test(r.uri))
+            .filter((r) => /^GET/.test(r.method) && !r.uri.includes('{') && r.uri !== '/' && !/^(livewire|up$|storage|_|imports\/|login$|logout$|api\/|manifest\.webmanifest$)/.test(r.uri) && !/lookup$/.test(r.uri))
             .map((r) => `/${r.uri}`))].sort();
 
         expect(pages.length > 40, `only ${pages.length} pages were found to open`);
@@ -860,6 +860,98 @@ const checks = {
         const lost = await page.until(`${notices}.length ? ${notices} : false`, 15000);
         expect(Array.isArray(lost) && lost.some((n) => n.startsWith('The deal is marked as lost')), `after losing the deal the page said: ${JSON.stringify(lost)}`);
     },
+    async 'installable app: a worker takes control and keeps only build files and icons, the offline page and bar appear when the network is cut, and install / update are offered'({ page, expect }) {
+        await page.signIn('manager@formezy.test');
+        await page.goto('/crm/leads', 800);
+
+        // the manifest the page links, and the icons it names, are real and as big as they say
+        const manifest = JSON.parse(await page.evaluate(js`fetch(document.querySelector('link[rel=manifest]').href).then((r) => r.text())`));
+        expect(manifest.display === 'standalone' && manifest.icons.length >= 3 && manifest.shortcuts.length > 0, `the manifest is not what an installable app needs: ${JSON.stringify(manifest).slice(0, 160)}`);
+        for (const icon of manifest.icons) {
+            const size = await page.evaluate(js`new Promise((done) => { const i = new Image(); i.onload = () => done(i.naturalWidth + 'x' + i.naturalHeight); i.onerror = () => done('missing'); i.src = ${JSON.stringify(icon.src)}; })`);
+            expect(size === icon.sizes, `${icon.src} is ${size}, the manifest says ${icon.sizes}`);
+        }
+
+        // a worker registers, activates and takes control of the page
+        expect(await page.until(js`navigator.serviceWorker.ready.then(() => !!navigator.serviceWorker.controller)`, 20000), 'no service worker took control of the page');
+
+        // …and after real use the only things it has put away are build files, icons and the offline page — never a page of the application
+        for (const path of ['/crm/follow-ups', '/dashboard', '/crm/leads']) {
+            await page.goto(path, 500);
+        }
+        const stored = JSON.parse(await page.evaluate(js`(async () => { const found = []; for (const name of await caches.keys()) { for (const request of await (await caches.open(name)).keys()) { found.push(new URL(request.url).pathname); } } return JSON.stringify(found); })()`));
+        const strays = stored.filter((p) => !/^\/(build\/assets|icons)\//.test(p) && p !== '/offline.html');
+        expect(stored.includes('/offline.html'), `the offline page was not put away: ${JSON.stringify(stored)}`);
+        expect(stored.some((p) => p.startsWith('/build/assets/')), `no build file was put away: ${JSON.stringify(stored)}`);
+        expect(strays.length === 0, `the worker stored something it must never keep: ${strays.join(', ')}`);
+
+        // the network goes: a bar says so, and opening a page shows the offline page instead of the browser's error
+        try {
+            await page.goto('/crm/leads', 400);
+            await page.offline(true);
+            expect(await page.until(js`[...document.querySelectorAll('[data-pwa=offline]')].some((e) => e.offsetParent !== null)`, 8000), 'the "You are offline" bar did not appear when the network was cut');
+
+            await page.goto('/crm/follow-ups', 400);
+            const title = await page.evaluate(js`document.title`);
+            const body = await page.evaluate(js`document.body.innerText.replace(/\s+/g, ' ')`);
+            expect(title.startsWith('You are offline') && body.includes('Try again'), `opening a page offline showed "${title}": ${body.slice(0, 120)}`);
+
+            // …and when it comes back the person lands on the page they wanted, without pressing anything
+            await page.offline(false);
+            expect(await page.until(js`location.pathname === '/crm/follow-ups' && !document.title.startsWith('You are offline') && !!document.querySelector('main')`, 15000), 'after the network came back the offline page did not open the page that was wanted');
+        } finally {
+            await page.offline(false);
+        }
+
+        // what the browser reported while the network was off is the network being off, nothing else
+        const heard = page.problems();
+        expect(heard.every((p) => /ERR_INTERNET_DISCONNECTED|ERR_NETWORK|Failed to fetch|Failed to load resource|offline/i.test(p)), `unexpected errors while offline: ${heard.join('; ')}`);
+
+        // a new version waiting, and an install the browser offered, are shown to the person (the events a real browser fires, made by hand)
+        await page.goto('/dashboard', 500);
+        // (said again on every look: the page may not have finished starting Alpine the first time, and a real update arrives long after that)
+        expect(await page.until(js`(window.dispatchEvent(new CustomEvent('pwa-change', { detail: { updateReady: true } })), [...document.querySelectorAll('[data-pwa=update]')].some((e) => e.offsetParent !== null && e.textContent.includes('Update now')))`, 8000), 'the "new version" bar did not appear');
+
+        await page.evaluate(js`(() => { const e = new Event('beforeinstallprompt', { cancelable: true }); e.prompt = () => { window.__prompted = true; }; e.userChoice = Promise.resolve({ outcome: 'accepted' }); window.dispatchEvent(e); return true; })()`);
+        await page.click('header button[aria-haspopup=menu]', 300);
+        expect(await page.until(js`[...document.querySelectorAll('header [role=menuitem]')].some((b) => b.offsetParent !== null && b.textContent.includes('Install app'))`, 5000), 'the account menu did not offer "Install app"');
+        await page.evaluate(js`[...document.querySelectorAll('header [role=menuitem]')].find((b) => b.textContent.includes('Install app')).click(), true`);
+        expect(await page.until(js`window.__prompted === true`, 5000), 'pressing "Install app" did not ask the browser to install');
+
+        return `${stored.length} files stored, manifest with ${manifest.icons.length} icons`;
+    },
+
+    async 'phone: the lead filters sit behind a Filters button, stay open while one is used, and are all on the screen from tablet width'({ page, expect }) {
+        await page.signIn('manager@formezy.test');
+        const shown = js`['l-owner', 'l-due', 'l-type', 'l-source', 'l-branch', 'l-from', 'l-to'].map((id) => { const e = document.getElementById(id); return !!e && e.offsetParent !== null; })`;
+        const button = js`document.querySelector('button[aria-controls=lead-filters]')`;
+
+        // a phone (a finger, a narrow window): the search is there, the other filters are not until asked for
+        await page.viewport(375, 800, true);
+        await page.goto('/crm/leads', 900);
+        expect(await page.evaluate(js`!!document.getElementById('l-search') && document.getElementById('l-search').offsetParent !== null`), 'the search box is not on the phone screen');
+        expect(!(await page.evaluate(js`${shown}.some(Boolean)`)), 'the filters were on the phone screen before anyone asked for them');
+        expect(await page.evaluate(js`!!${button} && ${button}.offsetParent !== null`), 'there is no Filters button on a phone');
+
+        await page.click('button[aria-controls=lead-filters]');
+        expect(await page.until(js`${shown}.every(Boolean)`, 5000), 'pressing Filters did not show the filters');
+
+        // using one asks the server and draws the list again: the panel stays open, and the button counts what is set
+        const sources = await page.evaluate(js`[...document.querySelectorAll('#l-source option')].map((o) => o.value).filter(Boolean)`);
+        expect(sources.length > 0, 'the source filter offers nothing to choose');
+        await page.fill('#l-source', sources[0], 1500);
+        expect(await page.until(js`${shown}.every(Boolean) && ${button}.textContent.trim().replace(/\s+/g, ' ') === 'Filters 1'`, 10000), `after choosing a filter the panel closed or the count was wrong: "${await page.evaluate(js`${button}.textContent.trim()`)}"`);
+        expect(!(await page.evaluate(js`document.documentElement.scrollWidth > document.documentElement.clientWidth + 1`)), 'the open filters make the phone page scroll sideways');
+
+        // a tablet and a desktop: everything is on the screen as before, and there is no button to press
+        for (const [width, touch] of [[768, true], [1440, false]]) {
+            await page.viewport(width, 900, touch);
+            await page.goto('/crm/leads', 900);
+            expect(await page.evaluate(js`${shown}.every(Boolean)`), `at ${width} px some filters are missing from the screen`);
+            expect(await page.evaluate(js`!${button} || ${button}.offsetParent === null`), `at ${width} px the Filters button is still there`);
+        }
+    },
+
     async 'website form: a page on a listed site can post a lead across origins, and a page on any other site is blocked by the browser'({ page, expect }) {
         await page.signIn('companyadmin@formezy.test');
         const home = origin;                                     // the CRM itself, e.g. http://127.0.0.1:8731
@@ -927,6 +1019,53 @@ const checks = {
         await page.goto(`/crm/leads?q=${mobile}&stage=all`);
         const text = await page.evaluate(mainText);
         expect(text.includes('Browser Check Visitor') && !text.includes('Browser Check Stranger'), 'the leads list does not show only the visitor from the listed site');
+    },
+    async 'territories: a manager adds one, gives it and takes off coverage, and is offered a shorter order for a day’s stops'({ page, expect }) {
+        await page.signIn('manager@formezy.test');
+
+        // the master: a new territory, then coverage picked from the list of states (the state kind lists them all)
+        const code = `BC${Date.now().toString(36).toUpperCase().slice(-6)}`;
+        await page.goto('/field/territories/create');
+        expect(await page.until(js`!!document.querySelector('#tf-code')`), 'the territory form did not open (the manager needs the territory permissions: seed the demo data again)');
+        await page.fill('#tf-code', code);
+        await page.fill('#tf-name', `Browser check ${code}`);
+        await page.click('form[wire\\:submit=save] button[type=submit]', 0);
+        expect(await page.until(js`/\/field\/territories\/\d+$/.test(location.pathname)`, 15000), 'saving the territory did not lead to its page');
+        expect(await page.until(js`document.querySelector('h1')?.textContent.includes(${JSON.stringify(code)})`), 'the territory page does not carry the new territory');
+
+        expect(await page.until(js`document.querySelectorAll('button[wire\\:click^="cover("]').length >= 2`), 'the state list offered fewer than two states to add');
+        await page.click('button[wire\\:click^="cover("]', 0);
+        expect(await page.until(js`${notices}.some(n => n.startsWith('Added to the territory'))`, 15000), `after adding a state the page said: ${JSON.stringify(await page.evaluate(notices))}`);
+        expect(await page.until(js`document.querySelectorAll('li[wire\\:key^=area-]').length === 1`), 'the territory does not show the state it was given');
+
+        await page.click('button[wire\\:click^="uncover("]', 0);
+        expect(await page.until(js`document.querySelectorAll('li[wire\\:key^=area-]').length === 0`, 15000), 'the coverage was not taken off');
+
+        // the plan form: three stops on a line, asked for an order — advice appears, and nothing is saved by asking
+        await page.goto('/field/plans/create');
+        expect(await page.until(js`!!document.querySelector('#s0-lat')`), 'the plan form did not open');
+
+        const stops = [['Far stop', '23.3000', '72.5000'], ['Near stop', '23.1000', '72.5000'], ['Middle stop', '23.2000', '72.5000']];
+        for (const [i, [label, lat, lng]] of stops.entries()) {
+            if (i > 0) {
+                await page.click('button[wire\\:click=addStop]', 0);
+                expect(await page.until(js`!!document.querySelector('#s${i}-lat')`), `stop ${i + 1} was not added`);
+            }
+            await page.fill(`#s${i}-label`, label, 50);
+            await page.fill(`#s${i}-lat`, lat, 50);
+            await page.fill(`#s${i}-lng`, lng, 50);
+        }
+
+        await page.click('button[wire\\:click=suggestOrder]', 0);
+        expect(await page.until(js`!!document.querySelector('[aria-label="Suggested order"]')`, 15000), 'asking for an order showed no suggestion');
+        const advice = await page.evaluate(js`document.querySelector('[aria-label="Suggested order"]').innerText.replace(/\s+/g, ' ')`);
+        expect(/A shorter order is possible|already the shortest/.test(advice), `the suggestion said: ${advice.slice(0, 120)}`);
+
+        if (advice.includes('A shorter order is possible')) {
+            await page.click('button[wire\\:click=applySuggestion]', 0);
+            expect(await page.until(js`!document.querySelector('[aria-label="Suggested order"]')`, 15000), 'using the suggested order did not close the suggestion');
+            expect(await page.evaluate(js`document.querySelector('#s0-label').value`) !== '' && (await page.evaluate(js`document.querySelectorAll('[id^=s][id$=-label]').length`)) === 3, 'applying the order lost a stop');
+        }
     },
 };
 

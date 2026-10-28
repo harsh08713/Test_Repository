@@ -8,9 +8,9 @@
 
     <div class="card">
         <div class="card-header">
-            <div class="flex items-center gap-3">
+            <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                 <label for="doc-type" class="text-sm font-medium text-slate-700">Document type</label>
-                <select id="doc-type" wire:model.live="documentType" class="input w-56">
+                <select id="doc-type" wire:model.live="documentType" class="input w-full sm:w-56">
                     @foreach ($types as $type)
                         <option value="{{ $type->value }}">{{ $type->label() }}</option>
                     @endforeach

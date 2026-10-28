@@ -2,9 +2,10 @@
 <html lang="en" class="h-full bg-slate-100">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ isset($title) ? $title.' · ' : '' }}{{ config('app.name') }}</title>
+    @include('layouts.partials.pwa-head')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="h-full font-sans text-slate-800 antialiased" x-data="{ nav: false }" x-on:keydown.escape.window="nav = false">
@@ -19,7 +20,7 @@
     <div x-show="nav" x-transition.opacity x-on:click="nav = false" class="fixed inset-0 z-30 bg-slate-900/50 lg:hidden" x-cloak></div>
 
     {{-- Sidebar --}}
-    <aside class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-navy-900 text-slate-300 transition-transform lg:translate-x-0"
+    <aside class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-navy-900 pl-[env(safe-area-inset-left)] text-slate-300 transition-transform lg:translate-x-0"
            x-bind:class="{ 'translate-x-0': nav }" aria-label="Main navigation">
         <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-5">
             <div class="flex size-9 items-center justify-center rounded-lg bg-brand-600 text-white"><x-icon name="chart-bar" class="size-5" /></div>
@@ -84,9 +85,16 @@
                         <p class="truncate text-sm font-medium text-slate-800">{{ $me->name }}</p>
                         <p class="truncate text-xs text-slate-500">{{ $role }}</p>
                     </div>
+                    {{-- Install as an app: a button where the browser offers one, a hint where it does not (Safari). See resources/js/pwa.js. --}}
+                    <div x-data="pwaShell()" x-on:pwa-change.window="sync($event.detail)" x-show="canInstall || showIosHint" x-cloak class="border-b border-slate-100">
+                        <button type="button" x-show="canInstall" x-on:click="install(); open = false" class="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" role="menuitem">
+                            <x-icon name="download" class="size-4 text-slate-400" /> Install app
+                        </button>
+                        <p x-show="showIosHint && ! canInstall" class="px-3 py-2 text-xs text-slate-600">To install on this device, tap Share, then &ldquo;Add to Home Screen&rdquo;.</p>
+                    </div>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
-                        <button type="submit" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" role="menuitem">
+                        <button type="submit" class="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" role="menuitem">
                             <x-icon name="logout" class="size-4 text-slate-400" /> Sign out
                         </button>
                     </form>
@@ -99,5 +107,7 @@
             {{ $slot }}
         </main>
     </div>
+
+    @include('layouts.partials.pwa-status')
 </body>
 </html>
