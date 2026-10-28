@@ -1,4 +1,4 @@
-# FormEzy ERP — Masters + CRM-Marketing
+# ZenVanta — Masters + CRM-Marketing
 
 Multi-company, multi-branch ERP foundation with a CRM-Marketing module, built on **Laravel 13**, **Livewire 4**,
 Tailwind 4 and MariaDB/MySQL. Every master and transaction goes through an approval workflow; only approved
